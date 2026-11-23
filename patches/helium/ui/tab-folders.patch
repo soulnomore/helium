@@ -68,7 +68,7 @@
    pins_ = PinList();
    SavePins();
  
-@@ -226,6 +229,52 @@
+@@ -226,6 +229,59 @@
    TabStripModelObserver::StopObservingAll(this);
    history_tasks_.TryCancelAll();
    weak_factory_.InvalidateWeakPtrs();
@@ -86,6 +86,13 @@
 +  if (!folder.empty() && !folders.IsFolder(folder))
 +    return;
 +  TabStripModel* model = browser->GetTabStripModel();
++  auto* active = model->GetActiveTab();
++  const auto* active_pin =
++      active ? HeliumPinsTabController::From(active) : nullptr;
++  // Leave a folded branch showing its current tab intact. Otherwise reveal
++  // the newly filed tabs at their destination.
++  const bool reveal =
++      !active_pin || !folders.Contains(folder, active_pin->pin_id());
 +  std::vector<tabs::TabHandle> members;
 +  for (auto handle : handles) {
 +    auto* tab = handle.Get();
@@ -117,11 +124,11 @@
 +    ids.push_back(HeliumPinsTabController::From(tab)->pin_id());
 +  }
 +  if (!unpin)
-+    TabFolderModel(*prefs_).Move(ids, folder, before);
++    TabFolderModel(*prefs_).Move(ids, folder, before, reveal);
  }
  
  void HeliumPinsService::SetPinnedUrl(const std::string& id, const GURL& url) {
-@@ -538,6 +587,8 @@
+@@ -538,6 +594,8 @@
    }
  
    pins_.erase(it);
@@ -149,7 +156,7 @@
  
 --- /dev/null
 +++ b/chrome/browser/ui/tabs/tab_folder_model.cc
-@@ -0,0 +1,174 @@
+@@ -0,0 +1,177 @@
 +// Copyright 2026 The Helium Authors
 +// Use, redistribution, and modification are permitted under the GPL-3.0
 +// license.
@@ -249,7 +256,8 @@
 +
 +void TabFolderModel::Move(const std::vector<std::string>& ids,
 +                          std::string parent,
-+                          std::string before) {
++                          std::string before,
++                          bool reveal) {
 +  if (!parent.empty() && !IsFolder(parent))
 +    return;
 +  const auto* next = Find(before);
@@ -276,9 +284,11 @@
 +      moved, [](const Entry& e) { return !e.is_folder() && e.parent.empty(); });
 +  entries_.insert(std::ranges::find(entries_, before, &Entry::id),
 +                  moved.begin(), moved.end());
-+  for (auto& item : entries_) {
-+    if (Contains(item.id, parent))
-+      item.collapsed = false;
++  if (reveal) {
++    for (auto& item : entries_) {
++      if (Contains(item.id, parent))
++        item.collapsed = false;
++    }
 +  }
 +  Save();
 +}
@@ -326,7 +336,7 @@
 +}  // namespace helium_pins
 --- /dev/null
 +++ b/chrome/browser/ui/tabs/tab_folder_model.h
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,56 @@
 +// Copyright 2026 The Helium Authors
 +// Use, redistribution, and modification are permitted under the GPL-3.0
 +// license.
@@ -369,7 +379,8 @@
 +  // Empty parent means the top level. Empty before means append.
 +  void Move(const std::vector<std::string>& ids,
 +            std::string parent,
-+            std::string before = {});
++            std::string before = {},
++            bool reveal = true);
 +  void Unpack(const std::string& id);
 +  void ForgetPin(const std::string& id);
 +
@@ -384,7 +395,7 @@
 +#endif  // CHROME_BROWSER_UI_TABS_TAB_FOLDER_MODEL_H_
 --- /dev/null
 +++ b/chrome/browser/ui/tabs/tab_folder_model_unittest.cc
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,61 @@
 +// Copyright 2026 The Helium Authors
 +// Use, redistribution, and modification are permitted under the GPL-3.0
 +// license.
@@ -404,8 +415,11 @@
 +  TabFolderModel folders(prefs);
 +  const std::string parent = folders.Create({}, u"Work");
 +  const std::string nested = folders.Create(parent, u"Reading");
-+  folders.Move({"pin-one", "pin-two"}, nested);
++  folders.Toggle(nested);
++  folders.Move({"pin-one", "pin-two"}, nested, {}, /*reveal=*/false);
++  EXPECT_TRUE(folders.Find(nested)->collapsed);
 +  folders.Move({"pin-two"}, nested, "pin-one");
++  EXPECT_FALSE(folders.Find(nested)->collapsed);
 +  folders.Toggle(parent);
 +  TabFolderModel restored(prefs);
 +  ASSERT_TRUE(restored.Find(parent));
@@ -610,16 +624,14 @@
  #include "ui/gfx/geometry/insets.h"
  #include "ui/gfx/geometry/rect.h"
  #include "ui/gfx/geometry/size.h"
-@@ -28,14 +29,18 @@
+@@ -28,14 +29,16 @@
  gfx::Size PinnedTabContainerViewVerticalLayout::GetMinimumSize(
      const views::View* host) const {
    if (!PinnedTabContainerView().collection_node_ ||
 -      PinnedTabContainerView().collection_node_->GetDirectChildren().empty()) {
 +      (PinnedTabContainerView().collection_node_->GetDirectChildren().empty() &&
 +       !(PinnedTabContainerView().folders_ &&
-+         PinnedTabContainerView().folders_->HasFolders() &&
-+         PinnedTabContainerView().GetTabStripCollapseState() ==
-+             tabs::VerticalTabStripCollapseState::kExpanded))) {
++         PinnedTabContainerView().folders_->HasFolders()))) {
      return gfx::Size();
    }
  
@@ -632,7 +644,7 @@
    const float min_rows = std::min(
        (collapse_state != tabs::VerticalTabStripCollapseState::kExpanded ? 1.5f
                                                                          : 1.0f),
-@@ -54,11 +59,22 @@
+@@ -54,11 +57,22 @@
  PinnedTabContainerViewVerticalLayout::CalculateProposedLayout(
      const views::SizeBounds& size_bounds) const {
    views::ProposedLayout layouts;
@@ -647,7 +659,7 @@
 +                        tabs::VerticalTabStripCollapseState::kExpanded;
 +  std::vector<views::View*> children;
 +  for (auto* child : all_children) {
-+    if (!host.IsFolderRow(*child))
++    if (!host.folders_ || !host.folders_->IsFiled(*child))
 +      children.push_back(child);
 +  }
 +  const auto rows = host.folders_ ? host.folders_->Rows()
@@ -656,19 +668,16 @@
    // Pins are laid out within the container's outline, if any.
    const gfx::Insets insets = PinnedTabContainerView().GetInsets();
  
-@@ -67,7 +83,10 @@
+@@ -67,7 +81,7 @@
  
    int y = insets.top();
  
 -  if (children.empty()) {
-+  if (children.empty() && (!expanded || rows.empty())) {
-+    for (const auto& row : rows) {
-+      layouts.child_layouts.emplace_back(row.view.get(), false, gfx::Rect());
-+    }
++  if (children.empty() && rows.empty()) {
      layouts.host_size = gfx::Size();
      return layouts;
    }
-@@ -94,7 +113,8 @@
+@@ -94,7 +108,8 @@
    // If the width is bounded, calculate how many slots fit on a row, and spread
    // the pins evenly over the rows they need, so that the last row isn't left
    // with fewer of them.
@@ -678,7 +687,7 @@
      row_width = size_bounds.width().value() - insets.width();
  
      // When we are in collapsed state, only one child should be shown per row.
-@@ -194,6 +214,30 @@
+@@ -194,6 +209,28 @@
      layouts.child_layouts.emplace_back(child, true, bounds);
    }
  
@@ -686,16 +695,14 @@
 +      GetLayoutConstant(LayoutConstant::kVerticalTabMinWidth));
 +  const int height = GetLayoutConstant(LayoutConstant::kVerticalTabHeight);
 +  for (const auto& row : rows) {
-+    // In a collapsed sidebar, real pins are already in the compact native grid.
-+    // Only its extra headers need to be hidden.
-+    if (!expanded && host.folders_->IsFiled(*row.view))
-+      continue;
-+    if (!expanded || !row.visible) {
++    if (!row.visible) {
 +      layouts.child_layouts.emplace_back(row.view.get(), false, gfx::Rect());
 +      continue;
 +    }
 +    const int indent =
-+        std::min(row.depth * 14, std::max(0, width - insets.width() - 48));
++        expanded
++            ? std::min(row.depth * 14, std::max(0, width - insets.width() - 48))
++            : 0;
 +    const int top = total_height
 +                        ? total_height + PinnedTabContainerView::kTabPadding
 +                        : insets.top();
@@ -742,7 +749,7 @@
      auto* state_controller =
          collection_node_->GetController()->GetStateController();
      CHECK(state_controller);
-@@ -287,7 +295,29 @@
+@@ -287,7 +295,28 @@
    return GetLinkDropIndexForHorizontal(loc_in_container);
  }
  
@@ -761,8 +768,7 @@
 +TabDragTarget* PinnedTabContainerView::GetFolderDragTarget(
 +    const gfx::Point& screen,
 +    bool over_open_tabs) {
-+  if (!folders_ || GetTabStripCollapseState() !=
-+                       tabs::VerticalTabStripCollapseState::kExpanded)
++  if (!folders_)
 +    return nullptr;
 +  return folders_->TargetAt(screen, over_open_tabs);
 +}
@@ -772,6 +778,16 @@
    collapsed_state_changed_subscription_ = {};
    collection_node_ = nullptr;
  }
+@@ -296,6 +325,9 @@
+     tabs::VerticalTabStripCollapseState state) {
+   // Collapsed state only exists for the vertical orientation.
+   CHECK_EQ(orientation_, TabStripOrientation::kVertical);
++  if (folders_)
++    folders_->SetCompact(state !=
++                         tabs::VerticalTabStripCollapseState::kExpanded);
+   set_drag_axes(state == tabs::VerticalTabStripCollapseState::kCollapsed
+                     ? DragAxes::kVerticalOnly
+                     : DragAxes::kBoth);
 --- a/chrome/browser/ui/views/tabs/common/pinned_tab_container_view.h
 +++ b/chrome/browser/ui/views/tabs/common/pinned_tab_container_view.h
 @@ -16,6 +16,7 @@
@@ -804,7 +820,7 @@
    base::CallbackListSubscription collapsed_state_changed_subscription_;
 --- /dev/null
 +++ b/chrome/browser/ui/views/tabs/common/tab_folder_controller.cc
-@@ -0,0 +1,566 @@
+@@ -0,0 +1,595 @@
 +// Copyright 2026 The Helium Authors
 +// Use, redistribution, and modification are permitted under the GPL-3.0
 +// license.
@@ -822,6 +838,7 @@
 +#include "chrome/browser/ui/tabs/helium_pins_tab_controller.h"
 +#include "chrome/browser/ui/tabs/pinned_tab_service_factory.h"
 +#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/tabs/vertical_tab_strip_state_controller.h"
 +#include "chrome/browser/ui/views/frame/browser_view.h"
 +#include "chrome/browser/ui/views/tabs/common/pinned_tab_container_view.h"
 +#include "chrome/browser/ui/views/tabs/common/split_tab_view.h"
@@ -936,14 +953,15 @@
 +        l10n_util::GetStringUTF16(IDS_HELIUM_FOLDER_NAME));
 +    editor_->set_controller(this);
 +  }
-+  void Update(const TabFolderModel::Entry& entry) {
-+    SetText(entry.name);
-+    SetImageModel(STATE_NORMAL,
-+                  ui::ImageModel::FromVectorIcon(
-+                      entry.collapsed ? vector_icons::kFolderFlippableIcon
-+                                      : vector_icons::kFolderOpenIcon,
-+                      ui::kColorIcon, 16));
-+    if (entry.collapsed)
++  void Update(const TabFolderModel::Entry& entry, bool compact) {
++    compact_ = compact;
++    collapsed_ = entry.collapsed;
++    SetHorizontalAlignment(compact ? gfx::ALIGN_CENTER : gfx::ALIGN_LEFT);
++    SetText(compact ? std::u16string() : entry.name);
++    GetViewAccessibility().SetName(entry.name);
++    SetTooltipText(compact ? entry.name : std::u16string());
++    UpdateIcon();
++    if (collapsed_)
 +      GetViewAccessibility().SetIsCollapsed();
 +    else
 +      GetViewAccessibility().SetIsExpanded();
@@ -951,7 +969,14 @@
 +  void Edit() {
 +    if (!GetWidget())
 +      return;
-+    editor_->SetText(GetText());
++    const auto* entry = owner_->model_.Find(id_);
++    if (!entry)
++      return;
++    if (compact_) {
++      owner_->node_->GetController()->GetStateController()->RequestCollapse(
++          false);
++    }
++    editor_->SetText(entry->name);
 +    editor_->SetVisible(true);
 +    editor_->SetBoundsRect(GetLocalBounds());
 +    editor_->RequestFocus();
@@ -960,6 +985,7 @@
 +  using DropPosition = TabFolderController::DropPosition;
 +  void Mark(std::optional<DropPosition> position) {
 +    position_ = position;
++    UpdateIcon();
 +    SetBackground(position == DropPosition::kInside
 +                      ? views::CreateRoundedRectBackground(
 +                            ui::kColorSysStateHoverOnSubtle, 6)
@@ -968,6 +994,13 @@
 +  }
 +
 + private:
++  void UpdateIcon() {
++    const bool open = !collapsed_ || position_ == DropPosition::kInside;
++    SetImageModel(STATE_NORMAL, ui::ImageModel::FromVectorIcon(
++                                    open ? vector_icons::kFolderOpenIcon
++                                         : vector_icons::kFolderFlippableIcon,
++                                    ui::kColorIcon, compact_ ? 22 : 16));
++  }
 +  void OnPaintBorder(gfx::Canvas* canvas) override {
 +    LabelButton::OnPaintBorder(canvas);
 +    if (position_ == DropPosition::kBefore ||
@@ -1052,6 +1085,8 @@
 +  raw_ptr<views::Textfield> editor_;
 +  std::optional<gfx::Point> start_;
 +  bool dragging_ = false;
++  bool compact_ = false;
++  bool collapsed_ = false;
 +  std::optional<DropPosition> position_;
 +  base::WeakPtrFactory<TabFolderButton> weak_factory_{this};
 +};
@@ -1107,11 +1142,21 @@
 +    if (!button)
 +      button = host_->AddChildView(
 +          std::make_unique<TabFolderButton>(*this, entry.id));
-+    button->Update(entry);
++    button->Update(entry, compact_);
 +  }
 +  for (auto* child : node_->GetDirectChildren())
 +    child->InvalidateLayout();
 +  host_->InvalidateLayout();
++}
++
++void TabFolderController::SetCompact(bool compact) {
++  if (compact_ == compact)
++    return;
++  compact_ = compact;
++  for (const auto& entry : model_.entries()) {
++    if (entry.is_folder())
++      buttons_.at(entry.id)->Update(entry, compact_);
++  }
 +}
 +
 +void TabFolderController::NewFolder(const std::string& parent) {
@@ -1373,7 +1418,7 @@
 +}
 --- /dev/null
 +++ b/chrome/browser/ui/views/tabs/common/tab_folder_controller.h
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,106 @@
 +// Copyright 2026 The Helium Authors
 +// Use, redistribution, and modification are permitted under the GPL-3.0
 +// license.
@@ -1423,6 +1468,7 @@
 +  std::vector<Row> Rows() const;
 +  bool HasFolders() const { return !buttons_.empty(); }
 +  bool IsFiled(const views::View& child) const;
++  void SetCompact(bool compact);
 +  void NewFolder(const std::string& parent = {});
 +  TabDragTarget* TargetAt(const gfx::Point& screen, bool over_open_tabs);
 +
@@ -1473,6 +1519,7 @@
 +  std::unique_ptr<views::MenuRunner> menu_runner_;
 +  std::optional<Destination> destination_;
 +  bool drag_group_ = false;
++  bool compact_ = false;
 +  PrefChangeRegistrar registrar_;
 +  base::OnceClosureList destroying_;
 +};

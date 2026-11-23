@@ -18,6 +18,7 @@ sidebar. Click the folder button beside **New Tab**, type a name, and press
 right-click the folder and choose **Move current tab here**.
 
 Click a folder to collapse or expand it. Its active tab stays visible.
+In the narrow sidebar, click the folder icon to do the same.
 Right-click a folder to create a subfolder, rename it, or unpack its contents.
 Drag a folder onto another folder to nest it, or to the upper or lower edge
 to reorder it. Folders use the same persistent pins as the rest of Helium.
