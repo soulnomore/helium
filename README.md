@@ -10,22 +10,20 @@
     </a>
 </div>
 
-## Tab folders in this fork
+## Native tab folders in this fork
 
-In a build of this fork, switch to vertical tabs, expand the sidebar, and select
-**Folders** beside **New tab**. Use **+** to name a folder, then drag an open
-tab into it. Drop on the middle of a folder to nest an item, or near the top or
-bottom edge of a row to reorder it.
+In a build of this branch, choose **Browser layout → Vertical** and expand the
+sidebar. Click the folder button beside **New Tab**, type a name, and press
+**Enter**. Drag an open tab onto the folder to pin it there. You can also
+right-click the folder and choose **Move current tab here**.
 
-A saved tab keeps its original address when you close it. Click its row to
-reopen it. Folders are shared by regular windows in the same profile. Each
-window shows its own open tabs. A folder’s **⋯** menu lets you add a subfolder,
-rename it, move it, or unpack it while keeping its contents.
+Click a folder to collapse or expand it. Its active tab stays visible.
+Right-click a folder to create a subfolder, rename it, or unpack its contents.
+Drag a folder onto another folder to nest it, or to the upper or lower edge
+to reorder it. Folders use the same persistent pins as the rest of Helium.
 
-To try the folder UI in an existing desktop Helium installation, open
-`helium://extensions`, enable **Developer mode**, choose **Load unpacked**,
-and select [resources/tab_folders](resources/tab_folders). Open **Tab folders**
-from the extensions menu to use it in Helium’s side panel.
+The [native folder patch](patches/helium/ui/tab-folders.patch) is part of this
+branch’s Chromium patch series. The downloads below are upstream releases.
 
 ## Downloads
 > [!NOTE]

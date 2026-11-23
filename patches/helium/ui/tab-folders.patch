@@ -1,348 +1,1628 @@
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
-@@ -21120,6 +21120,13 @@
+@@ -21120,6 +21120,14 @@
      <message name="IDS_OSCRYPTASYNC_AVAILABILITY_INFOBAR_BUTTON" desc="The text of the button to proceed with relaunching the entire browser to resolve keychain permission issues.">
        Relaunch
      </message>
-+
-+    <message name="IDS_HELIUM_TAB_FOLDERS" desc="Button to display folders in the vertical tab strip">
-+      Folders
-+    </message>
-+    <message name="IDS_HELIUM_TAB_FOLDERS_BACK" desc="Button to return from folders to the standard tab list">
-+      Tabs
-+    </message>
++    <message name="IDS_HELIUM_FOLDER_NEW" desc="Native vertical tab folder control: New folder">New folder</message>
++    <message name="IDS_HELIUM_FOLDER_NAME" desc="Native vertical tab folder control: Folder name">Folder name</message>
++    <message name="IDS_HELIUM_FOLDER_SUBFOLDER" desc="Native vertical tab folder control: New subfolder">New subfolder</message>
++    <message name="IDS_HELIUM_FOLDER_RENAME" desc="Native vertical tab folder control: Rename folder">Rename folder</message>
++    <message name="IDS_HELIUM_FOLDER_FILE_ACTIVE" desc="Native vertical tab folder control: Move current tab here">Move current tab here</message>
++    <message name="IDS_HELIUM_FOLDER_UNPACK" desc="Native vertical tab folder control: Unpack folder">Unpack folder</message>
++    <message name="IDS_HELIUM_FOLDER_TOP_LEVEL" desc="Native vertical tab folder control: Top level">Top level</message>
++    <message name="IDS_HELIUM_FOLDER_MOVE" desc="Native vertical tab folder control: Move folder to">Move folder to</message>
    </messages>
  </release>
  </grit>
---- a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
-+++ b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
-@@ -54,6 +54,7 @@
-       extension_misc::kPdfExtensionId,
-       helium::kUBlockOriginComponentId,
-       helium::kExtstoreFixupsExtensionId,
-+      extension_misc::kHeliumTabFoldersExtensionId,
- #if BUILDFLAG(IS_CHROMEOS)
-       extension_misc::kAssessmentAssistantExtensionId,
-       extension_misc::kAccessibilityCommonExtensionId,
-@@ -117,6 +118,7 @@
-     case IDR_WEBSTORE_MANIFEST:
-     case IDR_UBLOCK_MANIFEST_JSON:
-     case IDR_EXTSTORE_FIXUPS_MANIFEST_JSON:
-+    case IDR_HELIUM_TAB_FOLDERS_MANIFEST_JSON:
+--- a/chrome/browser/ui/tabs/BUILD.gn
++++ b/chrome/browser/ui/tabs/BUILD.gn
+@@ -443,6 +443,7 @@
+       "helium_pins_navigation_throttle.h",
+       "helium_pins_drag_tracker.h",
+       "helium_pins_list.h",
++      "tab_folder_model.h",
+       "helium_pins_service.h",
+       "helium_pins_tab_controller.h",
+       "helium_pins_util.h",
+@@ -522,6 +523,7 @@
+       "helium_pins_navigation_throttle.cc",
+       "helium_pins_drag_tracker.cc",
+       "helium_pins_list.cc",
++      "tab_folder_model.cc",
+       "helium_pins_service.cc",
+       "helium_pins_tab_controller.cc",
+       "helium_pins_util.cc",
+@@ -1077,6 +1079,7 @@
+       "tab_menu_model_unittest.cc",
+       "tab_metrics_provider_unittest.cc",
+       "tab_model_unittest.cc",
++      "tab_folder_model_unittest.cc",
+       "tab_strip_model_context_menu_unittest.cc",
+       "tab_strip_model_selection_state_unittest.cc",
+       "tab_strip_model_stats_recorder_unittest.cc",
+@@ -1146,6 +1149,7 @@
+       "//components/omnibox/common:features",
+       "//components/optimization_guide/core",
+       "//components/optimization_guide/core:features",
++      "//components/prefs:test_support",
+       "//components/sessions",
+       "//components/sessions:test_support",
+       "//components/sync:test_support",
+--- a/chrome/browser/ui/tabs/helium_pins_service.cc
++++ b/chrome/browser/ui/tabs/helium_pins_service.cc
+@@ -26,6 +26,7 @@
+ #include "chrome/browser/ui/tabs/helium_pins_list.h"
+ #include "chrome/browser/ui/tabs/helium_pins_tab_controller.h"
+ #include "chrome/browser/ui/tabs/helium_pins_util.h"
++#include "chrome/browser/ui/tabs/tab_folder_model.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
+ #include "chrome/common/pref_names.h"
+@@ -210,6 +211,8 @@
+ HeliumPinsService::~HeliumPinsService() = default;
  
- #if BUILDFLAG(IS_CHROMEOS)
-     // Separate ChromeOS list, as it is quite large.
---- a/chrome/browser/extensions/component_loader.cc
-+++ b/chrome/browser/extensions/component_loader.cc
-@@ -742,6 +742,8 @@
-     AddWebStoreApp();
-     AddUBlock();
-     AddExtstoreFixups();
-+    Add(IDR_HELIUM_TAB_FOLDERS_MANIFEST_JSON,
-+        base::FilePath(FILE_PATH_LITERAL("tab_folders")));
- #if BUILDFLAG(IS_CHROMEOS)
-     AddChromeApp();
- #endif  // BUILDFLAG(IS_CHROMEOS)
---- a/chrome/browser/resources/component_extension_resources.grd
-+++ b/chrome/browser/resources/component_extension_resources.grd
-@@ -69,6 +69,11 @@
-         <include name="IDR_ARC_SUPPORT_ICON_HEADER" file="chromeos/arc_support/images/header.png" type="BINDATA" />
-         <include name="IDR_ARC_SUPPORT_UI_JS" file="chromeos/arc_support/ui.js" type="chrome_html" />
-       </if>
-+      <include name="IDR_HELIUM_TAB_FOLDERS_MANIFEST_JSON" file="tab_folders/manifest.json" type="BINDATA" />
-+      <include name="IDR_HELIUM_TAB_FOLDERS_PANEL_CSS" file="tab_folders/panel.css" type="BINDATA" />
-+      <include name="IDR_HELIUM_TAB_FOLDERS_PANEL_HTML" file="tab_folders/panel.html" type="BINDATA" />
-+      <include name="IDR_HELIUM_TAB_FOLDERS_PANEL_JS" file="tab_folders/panel.js" type="BINDATA" />
-+      <include name="IDR_HELIUM_TAB_FOLDERS_WORKER_JS" file="tab_folders/worker.js" type="BINDATA" />
-     </includes>
+ void HeliumPinsService::UnpinAll() {
++  if (prefs_)
++    prefs_->ClearPref(kTabFoldersPref);
+   pins_ = PinList();
+   SavePins();
  
-     <!-- Game Controls lottie json files -->
+@@ -226,6 +229,52 @@
+   TabStripModelObserver::StopObservingAll(this);
+   history_tasks_.TryCancelAll();
+   weak_factory_.InvalidateWeakPtrs();
++}
++
++void HeliumPinsService::MoveTabsToFolder(
++    BrowserWindowInterface* browser,
++    const std::vector<tabs::TabHandle>& handles,
++    const std::string& folder,
++    const std::string& before,
++    bool unpin) {
++  if (!prefs_ || !IsSyncedBrowser(browser) || !CanChangePins(browser))
++    return;
++  TabFolderModel folders(*prefs_);
++  if (!folder.empty() && !folders.IsFolder(folder))
++    return;
++  TabStripModel* model = browser->GetTabStripModel();
++  std::vector<tabs::TabHandle> members;
++  for (auto handle : handles) {
++    auto* tab = handle.Get();
++    if (!tab || tab->GetBrowserWindowInterface() != browser)
++      continue;
++    if (auto split = tab->GetSplit()) {
++      for (auto* part : model->GetSplitData(*split)->ListTabs()) {
++        members.push_back(part->GetHandle());
++      }
++    } else {
++      members.push_back(handle);
++    }
++  }
++
++  std::vector<std::string> ids;
++  std::set<tabs::TabHandle> visited;
++  for (auto handle : members) {
++    auto* tab = handle.Get();
++    if (!tab || !visited.insert(handle).second)
++      continue;
++    if (tab->IsPinned() == unpin) {
++      model->SetTabPinned(model->GetIndexOfTab(tab), !unpin);
++    }
++    if (unpin)
++      continue;
++    // A tab can have arrived pinned during the drag before the pin service
++    // finished reconciling. AddPin reuses any existing pin identity.
++    AddPin(browser, tab);
++    ids.push_back(HeliumPinsTabController::From(tab)->pin_id());
++  }
++  if (!unpin)
++    TabFolderModel(*prefs_).Move(ids, folder, before);
+ }
+ 
+ void HeliumPinsService::SetPinnedUrl(const std::string& id, const GURL& url) {
+@@ -538,6 +587,8 @@
+   }
+ 
+   pins_.erase(it);
++  if (prefs_)
++    TabFolderModel(*prefs_).ForgetPin(id);
+   SavePins();
+ 
+   base::AutoReset<bool> applying_changes(&applying_changes_, true);
+--- a/chrome/browser/ui/tabs/helium_pins_service.h
++++ b/chrome/browser/ui/tabs/helium_pins_service.h
+@@ -58,6 +58,14 @@
+   // settings are reset.
+   void UnpinAll();
+ 
++  // Files existing tabs using their native persistent pin IDs. Called after a
++  // completed drag or from the folder menu, when the strip is editable.
++  void MoveTabsToFolder(BrowserWindowInterface* browser,
++                        const std::vector<tabs::TabHandle>& handles,
++                        const std::string& folder,
++                        const std::string& before,
++                        bool unpin);
++
+   // KeyedService:
+   void Shutdown() override;
+ 
+--- /dev/null
++++ b/chrome/browser/ui/tabs/tab_folder_model.cc
+@@ -0,0 +1,174 @@
++// Copyright 2026 The Helium Authors
++// Use, redistribution, and modification are permitted under the GPL-3.0
++// license.
++
++#include "chrome/browser/ui/tabs/tab_folder_model.h"
++
++#include <algorithm>
++#include <set>
++#include <utility>
++
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/uuid.h"
++#include "base/values.h"
++#include "components/prefs/pref_service.h"
++
++namespace helium_pins {
++
++TabFolderModel::TabFolderModel(PrefService& prefs) : prefs_(prefs) {
++  std::set<std::string> ids;
++  for (const auto& value : prefs.GetList(kTabFoldersPref)) {
++    const auto* dict = value.GetIfDict();
++    if (!dict)
++      continue;
++    const auto* id = dict->FindString("id");
++    const auto* parent = dict->FindString("parent");
++    if (!id || id->empty() || !parent || !ids.insert(*id).second)
++      continue;
++    const auto* name = dict->FindString("name");
++    entries_.push_back({*id, *parent,
++                        name ? base::UTF8ToUTF16(*name) : std::u16string(),
++                        dict->FindBool("collapsed").value_or(false)});
++  }
++  // A malformed parent link must never hide tabs or create a recursive tree.
++  for (auto& entry : entries_) {
++    if (!entry.parent.empty() &&
++        (!IsFolder(entry.parent) || Contains(entry.id, entry.parent))) {
++      entry.parent.clear();
++    }
++  }
++}
++
++TabFolderModel::~TabFolderModel() = default;
++
++const TabFolderModel::Entry* TabFolderModel::Find(const std::string& id) const {
++  const auto it = std::ranges::find(entries_, id, &Entry::id);
++  return it == entries_.end() ? nullptr : &*it;
++}
++
++bool TabFolderModel::IsFolder(const std::string& id) const {
++  const auto* entry = Find(id);
++  return entry && entry->is_folder();
++}
++
++bool TabFolderModel::Contains(const std::string& folder,
++                              const std::string& id) const {
++  size_t remaining = entries_.size();
++  for (auto* entry = Find(id); entry && remaining--;
++       entry = Find(entry->parent)) {
++    if (entry->id == folder)
++      return true;
++  }
++  return false;
++}
++
++std::string TabFolderModel::Create(const std::string& parent,
++                                   const std::u16string& name) {
++  if ((!parent.empty() && !IsFolder(parent)) || name.empty())
++    return {};
++  const std::string id = base::Uuid::GenerateRandomV4().AsLowercaseString();
++  entries_.push_back({id, parent, name});
++  for (auto& item : entries_) {
++    if (Contains(item.id, parent))
++      item.collapsed = false;
++  }
++  Save();
++  return id;
++}
++
++void TabFolderModel::Rename(const std::string& id, const std::u16string& name) {
++  std::u16string trimmed;
++  base::TrimWhitespace(name, base::TRIM_ALL, &trimmed);
++  auto it = std::ranges::find(entries_, id, &Entry::id);
++  if (it == entries_.end() || !it->is_folder() || trimmed.empty())
++    return;
++  it->name = std::move(trimmed);
++  Save();
++}
++
++void TabFolderModel::Toggle(const std::string& id) {
++  auto it = std::ranges::find(entries_, id, &Entry::id);
++  if (it == entries_.end() || !it->is_folder())
++    return;
++  it->collapsed = !it->collapsed;
++  Save();
++}
++
++void TabFolderModel::Move(const std::vector<std::string>& ids,
++                          std::string parent,
++                          std::string before) {
++  if (!parent.empty() && !IsFolder(parent))
++    return;
++  const auto* next = Find(before);
++  if (!before.empty() && (!next || next->parent != parent))
++    return;
++  std::vector<Entry> moved;
++  std::set<std::string> seen;
++  for (const auto& id : ids) {
++    if (id.empty() || id == before || Contains(id, parent))
++      return;
++    if (!seen.insert(id).second)
++      continue;
++    const auto* entry = Find(id);
++    if (!entry && parent.empty())
++      continue;
++    moved.push_back(entry ? *entry : Entry{id, {}, {}});
++    moved.back().parent = parent;
++  }
++  if (moved.empty())
++    return;
++  std::erase_if(entries_, [&](const Entry& e) { return seen.contains(e.id); });
++  // Top-level pins already get their order from the native pin list.
++  std::erase_if(
++      moved, [](const Entry& e) { return !e.is_folder() && e.parent.empty(); });
++  entries_.insert(std::ranges::find(entries_, before, &Entry::id),
++                  moved.begin(), moved.end());
++  for (auto& item : entries_) {
++    if (Contains(item.id, parent))
++      item.collapsed = false;
++  }
++  Save();
++}
++
++void TabFolderModel::Unpack(const std::string& id) {
++  const auto* folder = Find(id);
++  if (!folder || !folder->is_folder())
++    return;
++  const std::string parent = folder->parent;
++  std::vector<Entry> children;
++  for (const auto& item : entries_) {
++    if (item.parent == id && (item.is_folder() || !parent.empty())) {
++      children.push_back(item);
++      children.back().parent = parent;
++    }
++  }
++  std::erase_if(entries_, [&](const Entry& e) { return e.parent == id; });
++  auto pos = entries_.erase(std::ranges::find(entries_, id, &Entry::id));
++  entries_.insert(pos, children.begin(), children.end());
++  Save();
++}
++
++void TabFolderModel::ForgetPin(const std::string& id) {
++  if (std::erase_if(entries_, [&](const Entry& e) {
++        return !e.is_folder() && e.id == id;
++      }))
++    Save();
++}
++
++void TabFolderModel::Save() {
++  base::ListValue list;
++  for (const auto& e : entries_) {
++    base::DictValue value;
++    value.Set("id", e.id);
++    value.Set("parent", e.parent);
++    if (e.is_folder()) {
++      value.Set("name", base::UTF16ToUTF8(e.name));
++      value.Set("collapsed", e.collapsed);
++    }
++    list.Append(std::move(value));
++  }
++  prefs_->SetList(kTabFoldersPref, std::move(list));
++}
++
++}  // namespace helium_pins
+--- /dev/null
++++ b/chrome/browser/ui/tabs/tab_folder_model.h
+@@ -0,0 +1,55 @@
++// Copyright 2026 The Helium Authors
++// Use, redistribution, and modification are permitted under the GPL-3.0
++// license.
++
++#ifndef CHROME_BROWSER_UI_TABS_TAB_FOLDER_MODEL_H_
++#define CHROME_BROWSER_UI_TABS_TAB_FOLDER_MODEL_H_
++
++#include <string>
++#include <vector>
++
++#include "base/memory/raw_ref.h"
++
++class PrefService;
++
++namespace helium_pins {
++
++inline constexpr char kTabFoldersPref[] = "helium.tab_folders";
++
++// An ordered snapshot of the profile's folder tree. Leaf IDs reference Helium
++// pins. The pin service owns their URLs, session restoration and live tabs.
++class TabFolderModel {
++ public:
++  struct Entry {
++    std::string id;
++    std::string parent;
++    std::u16string name;
++    bool collapsed = false;
++    bool is_folder() const { return !name.empty(); }
++  };
++
++  explicit TabFolderModel(PrefService& prefs);
++  ~TabFolderModel();
++  const std::vector<Entry>& entries() const { return entries_; }
++  const Entry* Find(const std::string& id) const;
++  bool IsFolder(const std::string& id) const;
++  bool Contains(const std::string& folder, const std::string& id) const;
++  std::string Create(const std::string& parent, const std::u16string& name);
++  void Rename(const std::string& id, const std::u16string& name);
++  void Toggle(const std::string& id);
++  // Empty parent means the top level. Empty before means append.
++  void Move(const std::vector<std::string>& ids,
++            std::string parent,
++            std::string before = {});
++  void Unpack(const std::string& id);
++  void ForgetPin(const std::string& id);
++
++ private:
++  void Save();
++  raw_ref<PrefService> prefs_;
++  std::vector<Entry> entries_;
++};
++
++}  // namespace helium_pins
++
++#endif  // CHROME_BROWSER_UI_TABS_TAB_FOLDER_MODEL_H_
+--- /dev/null
++++ b/chrome/browser/ui/tabs/tab_folder_model_unittest.cc
+@@ -0,0 +1,58 @@
++// Copyright 2026 The Helium Authors
++// Use, redistribution, and modification are permitted under the GPL-3.0
++// license.
++
++#include "chrome/browser/ui/tabs/tab_folder_model.h"
++
++#include "components/prefs/pref_registry_simple.h"
++#include "components/prefs/testing_pref_service.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace helium_pins {
++namespace {
++
++TEST(TabFolderModelTest, RestoresOrderedNestedFoldersAndNativePinIdentities) {
++  TestingPrefServiceSimple prefs;
++  prefs.registry()->RegisterListPref(kTabFoldersPref);
++  TabFolderModel folders(prefs);
++  const std::string parent = folders.Create({}, u"Work");
++  const std::string nested = folders.Create(parent, u"Reading");
++  folders.Move({"pin-one", "pin-two"}, nested);
++  folders.Move({"pin-two"}, nested, "pin-one");
++  folders.Toggle(parent);
++  TabFolderModel restored(prefs);
++  ASSERT_TRUE(restored.Find(parent));
++  EXPECT_TRUE(restored.Find(parent)->collapsed);
++  ASSERT_EQ(4u, restored.entries().size());
++  EXPECT_EQ("pin-two", restored.entries()[2].id);
++  EXPECT_EQ(nested, restored.entries()[2].parent);
++  EXPECT_TRUE(restored.Contains(parent, "pin-one"));
++  restored.Move({parent}, nested);
++  EXPECT_TRUE(restored.Find(parent)->parent.empty());
++  restored.Rename(nested, u"  Archive ");
++  EXPECT_EQ(u"Archive", restored.Find(nested)->name);
++  restored.Unpack(nested);
++  EXPECT_EQ(parent, restored.Find("pin-one")->parent);
++  restored.ForgetPin("pin-one");
++  EXPECT_FALSE(restored.Find("pin-one"));
++  restored.Unpack(parent);
++  EXPECT_TRUE(TabFolderModel(prefs).entries().empty());
++}
++
++TEST(TabFolderModelTest, UnpacksChildrenAtTheOriginalFolderPosition) {
++  TestingPrefServiceSimple prefs;
++  prefs.registry()->RegisterListPref(kTabFoldersPref);
++  TabFolderModel folders(prefs);
++  const auto a = folders.Create({}, u"A");
++  const auto b = folders.Create({}, u"B");
++  const auto c = folders.Create({}, u"C");
++  const auto d = folders.Create(b, u"D");
++  folders.Unpack(b);
++  ASSERT_EQ(3u, folders.entries().size());
++  EXPECT_EQ(a, folders.entries()[0].id);
++  EXPECT_EQ(d, folders.entries()[1].id);
++  EXPECT_EQ(c, folders.entries()[2].id);
++}
++
++}  // namespace
++}  // namespace helium_pins
 --- a/chrome/browser/ui/tabs/tab_strip_prefs.cc
 +++ b/chrome/browser/ui/tabs/tab_strip_prefs.cc
-@@ -38,6 +38,7 @@
+@@ -7,9 +7,10 @@
+ #include "base/time/time.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
++#include "chrome/browser/ui/helium/helium_layout_state_controller.h"
+ #include "chrome/browser/ui/layout_constants.h"
+-#include "chrome/browser/ui/helium/helium_layout_state_controller.h"
+ #include "chrome/browser/ui/tabs/features.h"
++#include "chrome/browser/ui/tabs/tab_folder_model.h"
+ #include "chrome/browser/ui/tabs/vertical_tab_strip_state.h"
+ #include "chrome/browser/ui/tabs/vertical_tab_strip_state_controller.h"
+ #include "chrome/browser/ui/toolbar/toolbar_pref_names.h"
+@@ -37,6 +38,7 @@
+ 
    registry->RegisterIntegerPref(prefs::kHeliumLayout,
                                  std::to_underlying(HeliumLayoutType::kClassic));
++  registry->RegisterListPref(helium_pins::kTabFoldersPref);
    registry->RegisterBooleanPref(prefs::kHeliumVerticalRightAligned, false);
-+  registry->RegisterBooleanPref(kShowTabFolders, false);
    registry->RegisterBooleanPref(prefs::kHeliumZenMode, false);
    registry->RegisterBooleanPref(prefs::kHeliumZenModeSidebarPinned, false);
-   registry->RegisterBooleanPref(prefs::kHeliumZenModeTopChromePinned, false);
---- a/chrome/browser/ui/tabs/tab_strip_prefs.h
-+++ b/chrome/browser/ui/tabs/tab_strip_prefs.h
-@@ -13,6 +13,8 @@
- class BrowserWindowInterface;
- 
- namespace tabs {
-+
-+inline constexpr char kShowTabFolders[] = "helium.show_tab_folders";
- 
- enum class TabSearchPosition {
-   kLeadingHorizontalTabstrip,
 --- a/chrome/browser/ui/views/frame/BUILD.gn
 +++ b/chrome/browser/ui/views/frame/BUILD.gn
-@@ -532,6 +532,7 @@
-   public_deps = [
-     ":base_tab_strip_region_view",
-     "//base",
-+    "//components/prefs",
-     "//chrome/browser/ui/animation",
-     "//chrome/browser/ui/omnibox",
-     "//chrome/browser/ui/tabs",
-@@ -569,6 +570,12 @@
+@@ -569,6 +569,8 @@
      "//chrome/browser/ui/views/tabs/organizer",
      "//chrome/browser/ui/web_applications",
      "//chrome/browser/ui:view_ids",
-+    "//chrome/browser/extensions",
 +    "//chrome/browser/profiles:profile",
-+    "//chrome/browser/ui/views/extensions:extension_view_views",
-+    "//chrome/common/extensions",
-+    "//extensions/common",
-+    "//extensions/browser",
++    "//components/vector_icons",
      "//ui/base/dragdrop:types",
      "//ui/compositor",
      "//ui/display",
+--- a/chrome/browser/ui/views/frame/base_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/base_tab_strip_region_view.cc
+@@ -416,6 +416,16 @@
+   // Note: if the drag has not attached to this tab strip yet, it doesn't matter
+   // which container is used because the first drag loop iteration just attaches
+   // it.
++  if (auto* pins = GetPinnedTabsContainer()) {
++    auto* open = GetUnpinnedTabsContainer();
++    const bool over_open_tabs =
++        open && open->IsDrawn() &&
++        open->GetVisibleBounds().Contains(
++            views::View::ConvertPointFromScreen(open, point_in_screen));
++    if (auto* target =
++            pins->GetFolderDragTarget(point_in_screen, over_open_tabs))
++      return target;
++  }
+   if (drag_handler_->IsDraggingPinnedTabs()) {
+     return &GetPinnedTabsContainer()->GetTabDragTarget(point_in_screen);
+   }
 --- a/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
 +++ b/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
-@@ -16,7 +16,11 @@
- #include "base/metrics/user_metrics.h"
+@@ -17,6 +17,7 @@
  #include "base/metrics/user_metrics_action.h"
  #include "base/numerics/safe_conversions.h"
-+#include "base/one_shot_event.h"
  #include "base/time/time.h"
-+#include "chrome/browser/extensions/extension_view_host.h"
-+#include "chrome/browser/extensions/extension_view_host_factory.h"
 +#include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/ui/actions/chrome_action_id.h"
  #include "chrome/browser/ui/animation/browser_animation_controller.h"
  #include "chrome/browser/ui/animation/browser_animation_types.h"
-@@ -32,13 +36,15 @@
- #include "chrome/browser/ui/tabs/organizer/organizer_panel_utils.h"
- #include "chrome/browser/ui/tabs/tab_group_model.h"
- #include "chrome/browser/ui/tabs/tab_strip_model.h"
-+#include "chrome/browser/ui/tabs/tab_strip_prefs.h"
+@@ -35,10 +36,10 @@
  #include "chrome/browser/ui/tabs/vertical_tab_strip_state.h"
  #include "chrome/browser/ui/tabs/vertical_tab_strip_state_controller.h"
  #include "chrome/browser/ui/ui_features.h"
 +#include "chrome/browser/ui/view_ids.h"
  #include "chrome/browser/ui/views/animations/tab_strip_animations.h"
-+#include "chrome/browser/ui/views/extensions/extension_view_views.h"
  #include "chrome/browser/ui/views/frame/base_tab_strip_region_view.h"
  #include "chrome/browser/ui/views/frame/browser_view.h"
 -#include "chrome/browser/ui/view_ids.h"
  #include "chrome/browser/ui/views/frame/custom_corners_background.h"
  #include "chrome/browser/ui/views/frame/frame_separator.h"
  #include "chrome/browser/ui/views/frame/safe_invoke/safe_invoke.h"
-@@ -57,9 +63,14 @@
- #include "chrome/browser/ui/views/tabs/vertical/vertical_tab_strip_bottom_container.h"
- #include "chrome/browser/ui/views/tabs/vertical/vertical_tab_strip_focus_swipe_controller.h"
- #include "chrome/browser/ui/web_applications/app_browser_controller.h"
-+#include "chrome/common/extensions/extension_constants.h"
+@@ -60,6 +61,7 @@
  #include "chrome/grit/generated_resources.h"
-+#include "components/prefs/pref_service.h"
  #include "components/tabs/public/tab_group.h"
  #include "components/tabs/public/tab_interface.h"
-+#include "extensions/browser/extension_registry.h"
-+#include "extensions/browser/extension_system.h"
-+#include "extensions/common/extension.h"
++#include "components/vector_icons/vector_icons.h"
  #include "ui/base/dragdrop/os_exchange_data.h"
  #include "ui/base/interaction/element_tracker.h"
  #include "ui/base/l10n/l10n_util.h"
-@@ -175,6 +186,27 @@
+@@ -68,6 +70,8 @@
+ #include "ui/display/screen.h"
+ #include "ui/events/event.h"
+ #include "ui/gfx/geometry/point.h"
++#include "ui/views/controls/button/image_button.h"
++#include "ui/views/controls/button/image_button_factory.h"
+ #include "ui/views/controls/button/label_button.h"
+ #include "ui/views/controls/focus_ring.h"
+ #include "ui/views/controls/resize_area.h"
+@@ -174,6 +178,24 @@
+       views::kMarginsKey,
        gfx::Insets::TLBR(kBottomContainerGap, region_horizontal_padding,
                          0, region_horizontal_padding));
- 
-+  if (browser_view->GetProfile()->IsRegularProfile()) {
-+    tab_folders_button_ = bottom_button_container_->AddChildView(
-+        std::make_unique<views::LabelButton>(
-+            base::BindRepeating(&VerticalTabStripRegionView::ToggleTabFolders,
-+                                base::Unretained(this)),
-+            l10n_util::GetStringUTF16(IDS_HELIUM_TAB_FOLDERS)));
-+    tab_folders_button_->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
-+    tab_folders_prefs_.Init(browser_view->GetProfile()->GetPrefs());
-+    tab_folders_prefs_.Add(
-+        tabs::kShowTabFolders,
-+        base::BindRepeating(&VerticalTabStripRegionView::UpdateTabFolders,
-+                            base::Unretained(this)));
-+    if (auto* system =
-+            extensions::ExtensionSystem::Get(browser_view->GetProfile())) {
-+      system->ready().Post(
-+          FROM_HERE,
-+          base::BindOnce(&VerticalTabStripRegionView::UpdateTabFolders,
-+                         weak_ptr_factory_.GetWeakPtr()));
-+    }
-+  }
 +
++  if (browser_view->GetProfile()->IsRegularProfile()) {
++    auto* new_folder = bottom_button_container_->AddChildView(
++        views::CreateVectorImageButtonWithNativeTheme(
++            base::BindRepeating(
++                [](VerticalTabStripRegionView* strip) {
++                  if (auto* pins = strip->GetPinnedTabsContainer())
++                    pins->NewTabFolder();
++                },
++                base::Unretained(this)),
++            vector_icons::kFolderFlippableIcon, 16));
++    new_folder->SetTooltipText(
++        l10n_util::GetStringUTF16(IDS_HELIUM_FOLDER_NEW));
++    new_folder->SetAccessibleName(
++        l10n_util::GetStringUTF16(IDS_HELIUM_FOLDER_NEW));
++    new_folder->SetPreferredSize(gfx::Size(28, 28));
++    new_folder_button_ = new_folder;
++  }
+ 
    gemini_button_ =
        content_area_view_->AddChildView(std::make_unique<views::View>());
+@@ -939,6 +961,8 @@
  
-@@ -220,6 +252,10 @@
- }
+   UpdateResizeAreaVisibility();
  
- VerticalTabStripRegionView::~VerticalTabStripRegionView() {
-+  // The extension view holds a pointer to its host. Destroy it first.
-+  if (tab_folders_) {
-+    content_area_view_->RemoveChildViewT(tab_folders_.ExtractAsDangling());
-+  }
-   for (const auto& lock : hover_locks_) {
-     lock->ClearRegionViewOnDestruction();
-   }
-@@ -907,7 +943,73 @@
-   omnibox_tab_helper_observation_.Reset();
-   ResetExpandOnHoverTimers();
-   is_expanded_on_hover_ = false;
-+  if (tab_folders_) {
-+    tab_folders_->SetVisible(false);
-+  }
-   return BaseTabStripRegionView::RemoveTabStripView(view);
-+}
-+
-+void VerticalTabStripRegionView::ToggleTabFolders() {
-+  browser_view()->GetProfile()->GetPrefs()->SetBoolean(
-+      tabs::kShowTabFolders, !tab_folders_ || !tab_folders_->GetVisible());
-+}
-+
-+void VerticalTabStripRegionView::CloseTabFolders(extensions::ExtensionHost*) {
-+  browser_view()->GetProfile()->GetPrefs()->SetBoolean(tabs::kShowTabFolders,
-+                                                       false);
-+  content_area_view_->RemoveChildViewT(tab_folders_.ExtractAsDangling());
-+  tab_folders_host_.reset();
-+}
-+
-+void VerticalTabStripRegionView::UpdateTabFolders() {
-+  if (!tab_folders_button_ || !tab_strip_view()) {
-+    return;
-+  }
-+  Profile* profile = browser_view()->GetProfile();
-+  auto* registry = extensions::ExtensionRegistry::Get(profile);
-+  const auto* extension =
-+      registry ? registry->GetExtensionById(
-+                     extension_misc::kHeliumTabFoldersExtensionId,
-+                     extensions::ExtensionRegistry::ENABLED)
-+               : nullptr;
-+  const bool expanded = state_controller_->GetCollapseState() ==
-+                        tabs::VerticalTabStripCollapseState::kExpanded;
-+  tab_folders_button_->SetVisible(expanded && extension);
-+  const bool show = expanded && extension &&
-+                    profile->GetPrefs()->GetBoolean(tabs::kShowTabFolders);
-+  if (show && !tab_folders_) {
-+    tab_folders_host_ =
-+        extensions::ExtensionViewHostFactory::CreateSidePanelHost(
-+            *extension, extension->GetResourceURL("panel.html"),
-+            browser_view()->browser(),
-+            /*tab_interface=*/nullptr);
-+    tab_folders_host_->SetCloseHandler(base::BindOnce(
-+        &VerticalTabStripRegionView::CloseTabFolders, base::Unretained(this)));
-+    // The wrapper owns visibility. An ExtensionViewViews can show itself when
-+    // its first load completes while the user is collapsing the strip.
-+    tab_folders_ =
-+        content_area_view_->AddChildViewAt(std::make_unique<views::View>(), 0);
-+    tab_folders_->SetUseDefaultFillLayout(true);
-+    tab_folders_->SetProperty(
-+        views::kFlexBehaviorKey,
-+        views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToZero,
-+                                 views::MaximumFlexSizeRule::kUnbounded));
-+    tab_folders_
-+        ->AddChildView(std::make_unique<ExtensionViewViews>(
-+            profile, tab_folders_host_.get()))
-+        ->Init();
-+  }
-+  if (tab_folders_) {
-+    tab_folders_->SetVisible(show);
-+  }
-+  tab_strip_view()->SetVisible(!show);
-+  tab_folders_button_->SetText(l10n_util::GetStringUTF16(
-+      show ? IDS_HELIUM_TAB_FOLDERS_BACK : IDS_HELIUM_TAB_FOLDERS));
-+  bottom_button_container_->SetProperty(
-+      views::kFlexBehaviorKey,
-+      views::FlexSpecification(views::MinimumFlexSizeRule::kPreferred,
-+                               show ? views::MaximumFlexSizeRule::kPreferred
-+                                    : views::MaximumFlexSizeRule::kUnbounded));
- }
- 
- void VerticalTabStripRegionView::UpdateInteriorMargin() {
-@@ -943,6 +1045,7 @@
++  if (new_folder_button_)
++    new_folder_button_->SetVisible(!collapsed);
+   resize_area_width_ = collapsed ? kCollapsedResizeAreaWidth : kResizeAreaWidth;
  
    if (tab_strip_view()) {
-     tab_strip_view()->SetCollapsedState(collapsed);
-+    UpdateTabFolders();
-   }
- 
-   if (state == tabs::VerticalTabStripCollapseState::kExpanded ||
 --- a/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.h
 +++ b/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.h
-@@ -11,6 +11,7 @@
- #include "base/callback_list.h"
- #include "base/containers/flat_set.h"
- #include "base/memory/raw_ptr.h"
-+#include "base/memory/weak_ptr.h"
- #include "base/time/time.h"
- #include "base/timer/timer.h"
- #include "chrome/browser/ui/animation/browser_animation_types.h"
-@@ -24,6 +25,7 @@
- #include "chrome/browser/ui/views/tabs/organizer/organizer_panel_host.h"
- #include "chrome/browser/ui/views/tabs/shared/drop_arrow.h"
- #include "chrome/browser/ui/views/tabs/vertical/vertical_tab_strip_expand_on_hover_lock.h"
-+#include "components/prefs/pref_change_registrar.h"
- #include "components/tabs/public/tab_interface.h"
- #include "ui/base/interaction/element_tracker.h"
- #include "ui/base/metadata/metadata_header_macros.h"
-@@ -40,11 +42,17 @@
- class VerticalTabStripFocusSwipeController;
- class ShadowFrameView;
- 
-+namespace extensions {
-+class ExtensionHost;
-+class ExtensionViewHost;
-+}  // namespace extensions
-+
- namespace tabs {
- class VerticalTabStripStateController;
- }  // namespace tabs
- 
- namespace views {
-+class LabelButton;
- class ResizeArea;
- class Separator;
- class View;
-@@ -94,6 +102,9 @@
-                                  bool below_toolbar);
- 
-   void UpdateInteriorMargin();
-+  void ToggleTabFolders();
-+  void UpdateTabFolders();
-+  void CloseTabFolders(extensions::ExtensionHost* host);
- 
-   // views::LayoutDelegate:
-   views::ProposedLayout CalculateProposedLayout(
-@@ -236,6 +247,11 @@
+@@ -236,6 +236,7 @@
    // Padding around the content area, set by UpdateInteriorMargin().
    gfx::Insets interior_margin_;
  
-+  // Created on first use. A collapsed strip continues to show native tab icons.
-+  std::unique_ptr<extensions::ExtensionViewHost> tab_folders_host_;
-+  raw_ptr<views::View> tab_folders_ = nullptr;
-+  PrefChangeRegistrar tab_folders_prefs_;
-+  raw_ptr<views::LabelButton> tab_folders_button_ = nullptr;
++  raw_ptr<views::View> new_folder_button_ = nullptr;
    raw_ptr<VerticalTabStripBottomContainer> bottom_button_container_ = nullptr;
    raw_ptr<views::View> gemini_button_ = nullptr;
    raw_ptr<views::ResizeArea> resize_area_ = nullptr;
-@@ -299,6 +315,7 @@
-   base::OneShotTimer mouse_exit_timer_;
+--- a/chrome/browser/ui/views/tabs/common/BUILD.gn
++++ b/chrome/browser/ui/views/tabs/common/BUILD.gn
+@@ -47,6 +47,8 @@
+   sources = [
+     "dragged_tabs_container.cc",
+     "helium_pinned_tab_container_view_vertical_layout.cc",
++    "tab_folder_controller.h",
++    "tab_folder_controller.cc",
+     "horizontal_tab_style_views.cc",
+     "horizontal_tab_style_views.h",
+     "pinned_tab_container_view.cc",
+@@ -100,6 +102,10 @@
+     "//base:i18n",
+     "//cc/paint",
+     "//chrome/app/theme:theme_resources",
++    "//chrome/browser/profiles:profile",
++    "//components/prefs",
++    "//components/vector_icons",
++    "//ui/menus",
+     "//chrome/browser/ui/helium:helium_layout_state_controller",
+     "//chrome/browser/ui/views/helium:native_frame_materials",
+     "//chrome/browser:primitives",
+--- a/chrome/browser/ui/views/tabs/common/helium_pinned_tab_container_view_vertical_layout.cc
++++ b/chrome/browser/ui/views/tabs/common/helium_pinned_tab_container_view_vertical_layout.cc
+@@ -13,6 +13,7 @@
+ #include "chrome/browser/ui/views/tabs/common/pinned_tab_container_view.h"
+ #include "chrome/browser/ui/views/tabs/common/split_tab_view.h"
+ #include "chrome/browser/ui/views/tabs/common/tab_collection_node.h"
++#include "chrome/browser/ui/views/tabs/common/tab_folder_controller.h"
+ #include "ui/gfx/geometry/insets.h"
+ #include "ui/gfx/geometry/rect.h"
+ #include "ui/gfx/geometry/size.h"
+@@ -28,14 +29,18 @@
+ gfx::Size PinnedTabContainerViewVerticalLayout::GetMinimumSize(
+     const views::View* host) const {
+   if (!PinnedTabContainerView().collection_node_ ||
+-      PinnedTabContainerView().collection_node_->GetDirectChildren().empty()) {
++      (PinnedTabContainerView().collection_node_->GetDirectChildren().empty() &&
++       !(PinnedTabContainerView().folders_ &&
++         PinnedTabContainerView().folders_->HasFolders() &&
++         PinnedTabContainerView().GetTabStripCollapseState() ==
++             tabs::VerticalTabStripCollapseState::kExpanded))) {
+     return gfx::Size();
+   }
  
-   base::CallbackListSubscription paint_as_active_subscription_;
-+  base::WeakPtrFactory<VerticalTabStripRegionView> weak_ptr_factory_{this};
- };
+   // The minimum size should be enough to show a row and a half, if needed.
+   auto collapse_state = PinnedTabContainerView().GetTabStripCollapseState();
+-  const int num_children =
+-      PinnedTabContainerView().collection_node_->GetDirectChildren().size();
++  const int num_children = std::max<size_t>(
++      1, PinnedTabContainerView().collection_node_->GetDirectChildren().size());
+   const float min_rows = std::min(
+       (collapse_state != tabs::VerticalTabStripCollapseState::kExpanded ? 1.5f
+                                                                         : 1.0f),
+@@ -54,11 +59,22 @@
+ PinnedTabContainerViewVerticalLayout::CalculateProposedLayout(
+     const views::SizeBounds& size_bounds) const {
+   views::ProposedLayout layouts;
+-  const auto children =
++  const auto all_children =
+       PinnedTabContainerView().collection_node_
+           ? PinnedTabContainerView().collection_node_->GetDirectChildren()
+           : TabCollectionNode::ChildViews();
  
- #endif  // CHROME_BROWSER_UI_VIEWS_FRAME_VERTICAL_TAB_STRIP_REGION_VIEW_H_
---- a/chrome/common/extensions/extension_constants.h
-+++ b/chrome/common/extensions/extension_constants.h
-@@ -34,6 +34,9 @@
- }  // namespace extension_urls
- 
- namespace extension_misc {
++  const auto& host = PinnedTabContainerView();
++  const bool expanded = host.GetTabStripCollapseState() ==
++                        tabs::VerticalTabStripCollapseState::kExpanded;
++  std::vector<views::View*> children;
++  for (auto* child : all_children) {
++    if (!host.IsFolderRow(*child))
++      children.push_back(child);
++  }
++  const auto rows = host.folders_ ? host.folders_->Rows()
++                                  : std::vector<TabFolderController::Row>();
 +
-+inline constexpr char kHeliumTabFoldersExtensionId[] =
-+    "klejbhkceljchdennldmojfpebbkadbb";
+   // Pins are laid out within the container's outline, if any.
+   const gfx::Insets insets = PinnedTabContainerView().GetInsets();
  
- // The extension id of the Data Saver extension.
- inline constexpr char kDataSaverExtensionId[] =
+@@ -67,7 +83,10 @@
+ 
+   int y = insets.top();
+ 
+-  if (children.empty()) {
++  if (children.empty() && (!expanded || rows.empty())) {
++    for (const auto& row : rows) {
++      layouts.child_layouts.emplace_back(row.view.get(), false, gfx::Rect());
++    }
+     layouts.host_size = gfx::Size();
+     return layouts;
+   }
+@@ -94,7 +113,8 @@
+   // If the width is bounded, calculate how many slots fit on a row, and spread
+   // the pins evenly over the rows they need, so that the last row isn't left
+   // with fewer of them.
+-  if (size_bounds.width().is_bounded() && size_bounds.width().value() > 0) {
++  if (total_slots > 0 && size_bounds.width().is_bounded() &&
++      size_bounds.width().value() > 0) {
+     row_width = size_bounds.width().value() - insets.width();
+ 
+     // When we are in collapsed state, only one child should be shown per row.
+@@ -194,6 +214,30 @@
+     layouts.child_layouts.emplace_back(child, true, bounds);
+   }
+ 
++  const int width = size_bounds.width().value_or(
++      GetLayoutConstant(LayoutConstant::kVerticalTabMinWidth));
++  const int height = GetLayoutConstant(LayoutConstant::kVerticalTabHeight);
++  for (const auto& row : rows) {
++    // In a collapsed sidebar, real pins are already in the compact native grid.
++    // Only its extra headers need to be hidden.
++    if (!expanded && host.folders_->IsFiled(*row.view))
++      continue;
++    if (!expanded || !row.visible) {
++      layouts.child_layouts.emplace_back(row.view.get(), false, gfx::Rect());
++      continue;
++    }
++    const int indent =
++        std::min(row.depth * 14, std::max(0, width - insets.width() - 48));
++    const int top = total_height
++                        ? total_height + PinnedTabContainerView::kTabPadding
++                        : insets.top();
++    gfx::Rect bounds(insets.left() + indent, top,
++                     std::max(0, width - insets.width() - indent), height);
++    layouts.child_layouts.emplace_back(row.view.get(), true, bounds);
++    total_height = bounds.bottom();
++    total_width = std::max(total_width, bounds.right());
++  }
++
+   // Make sure we snap to bounded width if defined. This is necessary as the
+   // `child_width` calculation above rounds width down and this can result in
+   // off-by-one width calculations when the number of children on a row changes.
+--- a/chrome/browser/ui/views/tabs/common/pinned_tab_container_view.cc
++++ b/chrome/browser/ui/views/tabs/common/pinned_tab_container_view.cc
+@@ -5,8 +5,10 @@
+ #include "chrome/browser/ui/views/tabs/common/pinned_tab_container_view.h"
+ 
+ #include "base/i18n/rtl.h"
++#include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
+ #include "chrome/browser/ui/layout_constants.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/tabs/common/dragged_tabs_container.h"
+ #include "chrome/browser/ui/views/tabs/common/pinned_tab_container_view_horizontal_layout.h"
+ #include "chrome/browser/ui/views/tabs/common/pinned_tab_container_view_vertical_layout.h"
+@@ -14,6 +16,7 @@
+ #include "chrome/browser/ui/views/tabs/common/tab_collection_animating_layout_manager.h"
+ #include "chrome/browser/ui/views/tabs/common/tab_collection_node.h"
+ #include "chrome/browser/ui/views/tabs/common/tab_drag_handler.h"
++#include "chrome/browser/ui/views/tabs/common/tab_folder_controller.h"
+ #include "chrome/browser/ui/views/tabs/common/tab_strip_collection_controller.h"
+ #include "chrome/browser/ui/views/tabs/common/tab_view.h"
+ #include "content/public/browser/navigation_controller.h"
+@@ -91,6 +94,11 @@
+                                        kColorToolbarContentAreaSeparator),
+         gfx::Insets(kBorderPadding)));
+ 
++    auto* browser = collection_node_->GetController()->GetBrowserView();
++    if (browser && browser->GetProfile()->IsRegularProfile()) {
++      folders_ =
++          std::make_unique<TabFolderController>(*this, *collection_node_);
++    }
+     auto* state_controller =
+         collection_node_->GetController()->GetStateController();
+     CHECK(state_controller);
+@@ -287,7 +295,29 @@
+   return GetLinkDropIndexForHorizontal(loc_in_container);
+ }
+ 
++void PinnedTabContainerView::NewTabFolder() {
++  if (folders_)
++    folders_->NewFolder();
++}
++
++bool PinnedTabContainerView::IsFolderRow(const views::View& child) const {
++  return folders_ &&
++         GetTabStripCollapseState() ==
++             tabs::VerticalTabStripCollapseState::kExpanded &&
++         folders_->IsFiled(child);
++}
++
++TabDragTarget* PinnedTabContainerView::GetFolderDragTarget(
++    const gfx::Point& screen,
++    bool over_open_tabs) {
++  if (!folders_ || GetTabStripCollapseState() !=
++                       tabs::VerticalTabStripCollapseState::kExpanded)
++    return nullptr;
++  return folders_->TargetAt(screen, over_open_tabs);
++}
++
+ void PinnedTabContainerView::ResetCollectionNode() {
++  folders_.reset();
+   collapsed_state_changed_subscription_ = {};
+   collection_node_ = nullptr;
+ }
+--- a/chrome/browser/ui/views/tabs/common/pinned_tab_container_view.h
++++ b/chrome/browser/ui/views/tabs/common/pinned_tab_container_view.h
+@@ -16,6 +16,7 @@
+ #include "ui/views/view.h"
+ 
+ class TabCollectionNode;
++class TabFolderController;
+ 
+ // The view class that represents the pinned tab region for the
+ // tab strip. It manages the layout of all the pinned tabs and serves
+@@ -31,6 +32,11 @@
+   PinnedTabContainerView(const PinnedTabContainerView&) = delete;
+   PinnedTabContainerView& operator=(const PinnedTabContainerView&) = delete;
+   ~PinnedTabContainerView() override;
++
++  void NewTabFolder();
++  bool IsFolderRow(const views::View& child) const;
++  TabDragTarget* GetFolderDragTarget(const gfx::Point& screen,
++                                     bool over_open_tabs);
+ 
+   class LayoutManager : public views::LayoutManagerBase {
+    protected:
+@@ -92,6 +98,7 @@
+   const TabStripOrientation orientation_;
+   raw_ptr<TabCollectionNode> collection_node_ = nullptr;
+   const raw_ref<TabCollectionAnimatingLayoutManager> layout_manager_;
++  std::unique_ptr<TabFolderController> folders_;
+ 
+   base::CallbackListSubscription node_destroyed_subscription_;
+   base::CallbackListSubscription collapsed_state_changed_subscription_;
+--- /dev/null
++++ b/chrome/browser/ui/views/tabs/common/tab_folder_controller.cc
+@@ -0,0 +1,566 @@
++// Copyright 2026 The Helium Authors
++// Use, redistribution, and modification are permitted under the GPL-3.0
++// license.
++
++#include "chrome/browser/ui/views/tabs/common/tab_folder_controller.h"
++
++#include <algorithm>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "base/task/sequenced_task_runner.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/tabs/helium_pins_service.h"
++#include "chrome/browser/ui/tabs/helium_pins_tab_controller.h"
++#include "chrome/browser/ui/tabs/pinned_tab_service_factory.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/tabs/common/pinned_tab_container_view.h"
++#include "chrome/browser/ui/views/tabs/common/split_tab_view.h"
++#include "chrome/browser/ui/views/tabs/common/tab_collection_node.h"
++#include "chrome/browser/ui/views/tabs/common/tab_drag_handler.h"
++#include "chrome/browser/ui/views/tabs/common/tab_strip_collection_controller.h"
++#include "chrome/browser/ui/views/tabs/common/tab_view.h"
++#include "chrome/browser/ui/views/tabs/dragging/drag_session_data.h"
++#include "chrome/grit/generated_resources.h"
++#include "components/vector_icons/vector_icons.h"
++#include "ui/base/l10n/l10n_util.h"
++#include "ui/base/metadata/metadata_impl_macros.h"
++#include "ui/color/color_id.h"
++#include "ui/color/color_provider.h"
++#include "ui/events/event.h"
++#include "ui/gfx/canvas.h"
++#include "ui/views/accessibility/view_accessibility.h"
++#include "ui/views/background.h"
++#include "ui/views/border.h"
++#include "ui/views/context_menu_controller.h"
++#include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/menu/menu_runner.h"
++#include "ui/views/controls/textfield/textfield.h"
++#include "ui/views/controls/textfield/textfield_controller.h"
++#include "ui/views/view_class_properties.h"
++#include "ui/views/view_utils.h"
++#include "ui/views/widget/widget.h"
++
++namespace {
++using helium_pins::TabFolderModel;
++enum Command { kNew, kRename, kFileActive, kUnpack, kMove, kDestination };
++
++bool Hit(const views::View& view, const gfx::Point& screen) {
++  return view.IsDrawn() &&
++         view.GetVisibleBounds().Contains(
++             views::View::ConvertPointFromScreen(&view, screen));
++}
++
++std::string PinId(const TabView* view) {
++  const auto* tab = view ? view->GetTabInterface() : nullptr;
++  const auto* pin = tab ? helium_pins::HeliumPinsTabController::Get(
++                              tab->GetUnownedUserDataHost())
++                        : nullptr;
++  return pin ? pin->pin_id() : std::string();
++}
++
++class FolderNameField final : public views::Textfield {
++  METADATA_HEADER(FolderNameField, views::Textfield)
++ public:
++  explicit FolderNameField(base::RepeatingClosure on_blur)
++      : on_blur_(std::move(on_blur)) {}
++
++  void OnBlur() override {
++    Textfield::OnBlur();
++    on_blur_.Run();
++  }
++
++ private:
++  base::RepeatingClosure on_blur_;
++};
++
++BEGIN_METADATA(FolderNameField)
++END_METADATA
++
++bool IsActiveRow(const views::View* row) {
++  if (auto* tab = views::AsViewClass<TabView>(row))
++    return tab->IsActive();
++  auto* split = views::AsViewClass<SplitTabView>(row);
++  return split && split->collection_node() &&
++         std::ranges::any_of(split->collection_node()->GetDirectChildren(),
++                             [](auto* child) {
++                               auto* tab = views::AsViewClass<TabView>(child);
++                               return tab && tab->IsActive();
++                             });
++}
++
++void FileTabs(base::WeakPtr<BrowserWindowInterface> browser,
++              std::vector<tabs::TabHandle> tabs,
++              std::string folder,
++              std::string before,
++              bool unpin) {
++  if (!browser || browser->IsDeleteScheduled())
++    return;
++  if (auto* service =
++          PinnedTabServiceFactory::GetForProfile(browser->GetProfile())) {
++    service->MoveTabsToFolder(browser.get(), tabs, folder, before, unpin);
++  }
++}
++}  // namespace
++
++class TabFolderButton final : public views::LabelButton,
++                              public views::TextfieldController,
++                              public views::ContextMenuController {
++  METADATA_HEADER(TabFolderButton, views::LabelButton)
++ public:
++  TabFolderButton(TabFolderController& owner, std::string id)
++      : LabelButton(base::BindRepeating(&TabFolderButton::Toggle,
++                                        base::Unretained(this))),
++        owner_(owner),
++        id_(std::move(id)) {
++    SetHorizontalAlignment(gfx::ALIGN_LEFT);
++    SetImageLabelSpacing(7);
++    SetBorder(views::CreateEmptyBorder(gfx::Insets::VH(0, 6)));
++    SetFocusBehavior(FocusBehavior::ALWAYS);
++    set_context_menu_controller(this);
++    editor_ =
++        AddChildView(std::make_unique<FolderNameField>(base::BindRepeating(
++            &TabFolderButton::FinishEdit, weak_factory_.GetWeakPtr(), true)));
++    editor_->SetProperty(views::kViewIgnoredByLayoutKey, true);
++    editor_->SetVisible(false);
++    editor_->GetViewAccessibility().SetName(
++        l10n_util::GetStringUTF16(IDS_HELIUM_FOLDER_NAME));
++    editor_->set_controller(this);
++  }
++  void Update(const TabFolderModel::Entry& entry) {
++    SetText(entry.name);
++    SetImageModel(STATE_NORMAL,
++                  ui::ImageModel::FromVectorIcon(
++                      entry.collapsed ? vector_icons::kFolderFlippableIcon
++                                      : vector_icons::kFolderOpenIcon,
++                      ui::kColorIcon, 16));
++    if (entry.collapsed)
++      GetViewAccessibility().SetIsCollapsed();
++    else
++      GetViewAccessibility().SetIsExpanded();
++  }
++  void Edit() {
++    if (!GetWidget())
++      return;
++    editor_->SetText(GetText());
++    editor_->SetVisible(true);
++    editor_->SetBoundsRect(GetLocalBounds());
++    editor_->RequestFocus();
++    editor_->SelectAll(false);
++  }
++  using DropPosition = TabFolderController::DropPosition;
++  void Mark(std::optional<DropPosition> position) {
++    position_ = position;
++    SetBackground(position == DropPosition::kInside
++                      ? views::CreateRoundedRectBackground(
++                            ui::kColorSysStateHoverOnSubtle, 6)
++                      : nullptr);
++    SchedulePaint();
++  }
++
++ private:
++  void OnPaintBorder(gfx::Canvas* canvas) override {
++    LabelButton::OnPaintBorder(canvas);
++    if (position_ == DropPosition::kBefore ||
++        position_ == DropPosition::kAfter) {
++      const int y = position_ == DropPosition::kBefore ? 0 : height() - 2;
++      canvas->FillRect(gfx::Rect(0, y, width(), 2),
++                       GetColorProvider()->GetColor(ui::kColorSysPrimary));
++    }
++  }
++  void Toggle() { owner_->model_.Toggle(id_); }
++  void FinishEdit(bool save) {
++    if (!editor_->GetVisible())
++      return;
++    const std::u16string text(editor_->GetText());
++    editor_->SetVisible(false);
++    if (save)
++      owner_->model_.Rename(id_, text);
++  }
++  void Layout(PassKey) override {
++    LayoutSuperclass<views::LabelButton>(this);
++    if (editor_->GetVisible())
++      editor_->SetBoundsRect(GetLocalBounds());
++  }
++  bool HandleKeyEvent(views::Textfield*, const ui::KeyEvent& e) override {
++    if (e.type() != ui::EventType::kKeyPressed ||
++        (e.key_code() != ui::VKEY_RETURN && e.key_code() != ui::VKEY_ESCAPE))
++      return false;
++    FinishEdit(e.key_code() == ui::VKEY_RETURN);
++    RequestFocus();
++    return true;
++  }
++  bool OnKeyPressed(const ui::KeyEvent& e) override {
++    if (e.key_code() == ui::VKEY_F2) {
++      Edit();
++      return true;
++    }
++    if (e.key_code() == ui::VKEY_LEFT || e.key_code() == ui::VKEY_RIGHT) {
++      const auto* entry = owner_->model_.Find(id_);
++      if (entry && entry->collapsed == (e.key_code() == ui::VKEY_RIGHT))
++        Toggle();
++      return true;
++    }
++    return LabelButton::OnKeyPressed(e);
++  }
++  void ShowContextMenuForViewImpl(views::View*,
++                                  const gfx::Point& point,
++                                  ui::mojom::MenuSourceType source) override {
++    owner_->ShowMenu(id_, point, source);
++  }
++  bool OnMousePressed(const ui::MouseEvent& e) override {
++    start_ = e.IsOnlyLeftMouseButton() ? std::make_optional(e.location())
++                                       : std::nullopt;
++    dragging_ = false;
++    return LabelButton::OnMousePressed(e);
++  }
++  bool OnMouseDragged(const ui::MouseEvent& e) override {
++    if (start_ &&
++        (dragging_ || ExceededDragThreshold(e.location() - *start_))) {
++      dragging_ = true;
++      owner_->DragFolder(id_, ConvertPointToScreen(this, e.location()), false);
++      return true;
++    }
++    return LabelButton::OnMouseDragged(e);
++  }
++  void OnMouseReleased(const ui::MouseEvent& e) override {
++    start_.reset();
++    if (std::exchange(dragging_, false)) {
++      SetState(STATE_NORMAL);
++      owner_->DragFolder(id_, ConvertPointToScreen(this, e.location()), true);
++      return;
++    }
++    LabelButton::OnMouseReleased(e);
++  }
++  void OnMouseCaptureLost() override {
++    start_.reset();
++    dragging_ = false;
++    owner_->Highlight({});
++    LabelButton::OnMouseCaptureLost();
++  }
++  const raw_ref<TabFolderController> owner_;
++  const std::string id_;
++  raw_ptr<views::Textfield> editor_;
++  std::optional<gfx::Point> start_;
++  bool dragging_ = false;
++  std::optional<DropPosition> position_;
++  base::WeakPtrFactory<TabFolderButton> weak_factory_{this};
++};
++
++BEGIN_METADATA(TabFolderButton)
++END_METADATA
++
++TabFolderController::TabFolderController(PinnedTabContainerView& host,
++                                         TabCollectionNode& node)
++    : host_(host),
++      node_(node),
++      browser_(*node.GetController()->GetBrowserView()->browser()),
++      model_(*browser_->GetProfile()->GetPrefs()) {
++  browser_->GetTabStripModel()->AddObserver(this);
++  registrar_.Init(browser_->GetProfile()->GetPrefs());
++  registrar_.Add(helium_pins::kTabFoldersPref,
++                 base::BindRepeating(&TabFolderController::Reload,
++                                     base::Unretained(this)));
++  Reload();
++}
++
++TabFolderController::~TabFolderController() {
++  registrar_.RemoveAll();
++  destroying_.Notify();
++  menu_runner_.reset();
++  for (auto& [id, button] : buttons_) {
++    host_->RemoveChildViewT(button.ExtractAsDangling());
++  }
++}
++
++void TabFolderController::OnTabStripModelChanged(
++    TabStripModel*,
++    const TabStripModelChange&,
++    const TabStripSelectionChange& selection) {
++  if (HasFolders() && selection.active_tab_changed())
++    host_->InvalidateLayout();
++}
++
++void TabFolderController::Reload() {
++  model_ = TabFolderModel(*browser_->GetProfile()->GetPrefs());
++  for (auto it = buttons_.begin(); it != buttons_.end();) {
++    if (model_.IsFolder(it->first)) {
++      ++it;
++      continue;
++    }
++    host_->RemoveChildViewT(it->second.ExtractAsDangling());
++    it = buttons_.erase(it);
++  }
++  for (const auto& entry : model_.entries()) {
++    if (!entry.is_folder())
++      continue;
++    auto& button = buttons_[entry.id];
++    if (!button)
++      button = host_->AddChildView(
++          std::make_unique<TabFolderButton>(*this, entry.id));
++    button->Update(entry);
++  }
++  for (auto* child : node_->GetDirectChildren())
++    child->InvalidateLayout();
++  host_->InvalidateLayout();
++}
++
++void TabFolderController::NewFolder(const std::string& parent) {
++  const auto id =
++      model_.Create(parent, l10n_util::GetStringUTF16(IDS_HELIUM_FOLDER_NEW));
++  if (auto it = buttons_.find(id); it != buttons_.end()) {
++    if (host_->GetWidget())
++      host_->GetWidget()->LayoutRootViewIfNecessary();
++    it->second->ScrollViewToVisible();
++    it->second->Edit();
++  }
++}
++
++std::string TabFolderController::FiledId(const views::View& child) const {
++  auto find = [&](const TabView* tab) -> std::string {
++    const auto id = PinId(tab);
++    const auto* entry = model_.Find(id);
++    return entry && !entry->parent.empty() ? id : std::string();
++  };
++  if (const auto* split = views::AsViewClass<SplitTabView>(&child)) {
++    if (const auto* node = split->collection_node()) {
++      for (auto* view : node->GetDirectChildren()) {
++        auto id = find(views::AsViewClass<TabView>(view));
++        if (!id.empty())
++          return id;
++      }
++    }
++    return {};
++  }
++  return find(views::AsViewClass<TabView>(&child));
++}
++
++bool TabFolderController::IsFiled(const views::View& child) const {
++  return HasFolders() && !FiledId(child).empty();
++}
++
++std::vector<TabFolderController::Row> TabFolderController::Rows() const {
++  if (!HasFolders())
++    return {};
++  std::map<std::string, views::View*> tabs;
++  for (auto* child : node_->GetDirectChildren()) {
++    auto id = FiledId(*child);
++    if (!id.empty())
++      tabs.emplace(std::move(id), child);
++  }
++  std::vector<Row> rows;
++  auto visit = [&](auto& self, const std::string& parent, int depth,
++                   bool visible) -> void {
++    for (const auto& entry : model_.entries()) {
++      if (entry.parent != parent)
++        continue;
++      if (entry.is_folder()) {
++        rows.push_back({buttons_.at(entry.id), depth, visible});
++        self(self, entry.id, depth + 1, visible && !entry.collapsed);
++      } else if (auto it = tabs.find(entry.id); it != tabs.end()) {
++        rows.push_back({it->second, depth, visible || IsActiveRow(it->second)});
++      }
++    }
++  };
++  visit(visit, {}, 0, true);
++  return rows;
++}
++
++std::string TabFolderController::NextSibling(const std::string& id) const {
++  const auto& entries = model_.entries();
++  auto it = std::ranges::find(entries, id, &TabFolderModel::Entry::id);
++  if (it == entries.end())
++    return {};
++  const auto& parent = it->parent;
++  const auto next = std::find_if(
++      std::next(it), entries.end(),
++      [&](const auto& candidate) { return candidate.parent == parent; });
++  return next == entries.end() ? std::string() : next->id;
++}
++
++void TabFolderController::Highlight(const std::string& id,
++                                    DropPosition position) {
++  if (id == highlight_ && position == highlight_position_)
++    return;
++  if (auto it = buttons_.find(highlight_); it != buttons_.end())
++    it->second->Mark(std::nullopt);
++  highlight_ = id;
++  highlight_position_ = position;
++  if (auto it = buttons_.find(id); it != buttons_.end())
++    it->second->Mark(position);
++}
++
++void TabFolderController::DragFolder(const std::string& id,
++                                     const gfx::Point& point,
++                                     bool drop) {
++  for (const auto& [target, button] : buttons_) {
++    if (!Hit(*button, point) || model_.Contains(id, target))
++      continue;
++    const auto local = views::View::ConvertPointFromScreen(button, point);
++    const auto* entry = model_.Find(target);
++    const auto position =
++        local.y() < button->height() / 4        ? DropPosition::kBefore
++        : local.y() >= 3 * button->height() / 4 ? DropPosition::kAfter
++                                                : DropPosition::kInside;
++    if (drop) {
++      Highlight({});
++      if (position == DropPosition::kInside)
++        model_.Move({id}, target);
++      else
++        model_.Move(
++            {id}, entry->parent,
++            position == DropPosition::kBefore ? target : NextSibling(target));
++    } else {
++      Highlight(target, position);
++    }
++    return;
++  }
++  Highlight({});
++}
++
++std::optional<TabFolderController::Destination>
++TabFolderController::FindDestination(const gfx::Point& point,
++                                     bool over_open_tabs) const {
++  if (!HasFolders())
++    return std::nullopt;
++  if (Hit(*host_, point)) {
++    for (const auto& [id, button] : buttons_) {
++      if (Hit(*button, point))
++        return Destination{id, {}};
++    }
++    for (auto* child : node_->GetDirectChildren()) {
++      if (!Hit(*child, point))
++        continue;
++      const auto id = FiledId(*child);
++      if (const auto* entry = model_.Find(id)) {
++        const auto local = views::View::ConvertPointFromScreen(child, point);
++        return Destination{entry->parent, local.y() < child->height() / 2
++                                              ? id
++                                              : NextSibling(id)};
++      }
++    }
++  }
++  // A drag from a folder to loose tabs unpins it. A drag to the ordinary pin
++  // grid keeps it pinned. Other tab drags stay with Chromium's drag target.
++  if ((over_open_tabs || Hit(*host_, point)) &&
++      std::ranges::any_of(node_->GetDirectChildren(), [&](auto* child) {
++        return IsFiled(*child) &&
++               node_->GetController()->GetDragHandler().IsViewDragging(*child);
++      })) {
++    return Destination{{}, {}, over_open_tabs};
++  }
++  return std::nullopt;
++}
++
++TabDragTarget* TabFolderController::TargetAt(const gfx::Point& point,
++                                             bool over_open_tabs) {
++  auto target = FindDestination(point, over_open_tabs);
++  if (!target)
++    return nullptr;
++  destination_ = std::move(target);
++  return this;
++}
++
++TabDragContext* TabFolderController::OnTabDragUpdated(
++    DragController& controller,
++    const gfx::Point&) {
++  drag_group_ = controller.GetSessionData().group_header_drag_data_.has_value();
++  Highlight(destination_ && !drag_group_ ? destination_->folder
++                                         : std::string());
++  return node_->GetController()->GetDragHandler().GetDragContext();
++}
++bool TabFolderController::CanDropTab() {
++  return destination_.has_value() && !drag_group_;
++}
++void TabFolderController::OnTabDragExited(const gfx::Point&) {
++  OnTabDragEnded();
++}
++void TabFolderController::OnTabDragEnded() {
++  Highlight({});
++  destination_.reset();
++}
++base::CallbackListSubscription TabFolderController::RegisterWillDestroyCallback(
++    base::OnceClosure callback) {
++  return destroying_.Add(std::move(callback));
++}
++void TabFolderController::HandleTabDrop(DragController& controller) {
++  if (!CanDropTab())
++    return;
++  std::vector<tabs::TabHandle> tabs;
++  for (const auto& item : controller.GetSessionData().tab_drag_data_) {
++    if (item.contents)
++      tabs.push_back(
++          tabs::TabInterface::GetFromContents(item.contents)->GetHandle());
++  }
++  // Reparenting tabs during drag teardown can destroy the drag context.
++  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce(&FileTabs, browser_->GetWeakPtr(),
++                                std::move(tabs), destination_->folder,
++                                destination_->before, destination_->unpin));
++}
++
++void TabFolderController::ShowMenu(const std::string& id,
++                                   const gfx::Point& point,
++                                   ui::mojom::MenuSourceType source) {
++  menu_folder_ = id;
++  menu_runner_.reset();
++  menu_ = std::make_unique<ui::SimpleMenuModel>(this);
++  destinations_menu_ = std::make_unique<ui::SimpleMenuModel>(this);
++  menu_->AddItemWithStringId(kNew, IDS_HELIUM_FOLDER_SUBFOLDER);
++  menu_->AddItemWithStringId(kRename, IDS_HELIUM_FOLDER_RENAME);
++  menu_->AddItemWithStringId(kFileActive, IDS_HELIUM_FOLDER_FILE_ACTIVE);
++  menu_destinations_.clear();
++  menu_destinations_.push_back({});
++  destinations_menu_->AddItemWithStringId(kDestination,
++                                          IDS_HELIUM_FOLDER_TOP_LEVEL);
++  for (const auto& e : model_.entries()) {
++    if (!e.is_folder() || model_.Contains(id, e.id))
++      continue;
++    std::u16string path = e.name;
++    for (auto* parent = model_.Find(e.parent); parent;
++         parent = model_.Find(parent->parent)) {
++      path = parent->name + u" / " + path;
++    }
++    destinations_menu_->AddItem(kDestination + menu_destinations_.size(), path);
++    menu_destinations_.push_back(e.id);
++  }
++  menu_->AddSubMenuWithStringId(kMove, IDS_HELIUM_FOLDER_MOVE,
++                                destinations_menu_.get());
++  menu_->AddItemWithStringId(kUnpack, IDS_HELIUM_FOLDER_UNPACK);
++  menu_runner_ = std::make_unique<views::MenuRunner>(
++      menu_.get(), views::MenuRunner::CONTEXT_MENU);
++  menu_runner_->RunMenuAt(host_->GetWidget(), nullptr,
++                          gfx::Rect(point, gfx::Size()),
++                          views::MenuAnchorPosition::kTopLeft, source);
++}
++
++void TabFolderController::ExecuteCommand(int command, int) {
++  if (!model_.IsFolder(menu_folder_))
++    return;
++  switch (command) {
++    case kNew:
++      NewFolder(menu_folder_);
++      break;
++    case kRename:
++      buttons_.at(menu_folder_)->Edit();
++      break;
++    case kFileActive: {
++      if (auto* tab = browser_->GetTabStripModel()->GetActiveTab()) {
++        FileTabs(browser_->GetWeakPtr(), {tab->GetHandle()}, menu_folder_, {},
++                 false);
++      }
++      break;
++    }
++    case kUnpack:
++      model_.Unpack(menu_folder_);
++      break;
++    default:
++      if (command >= kDestination &&
++          static_cast<size_t>(command - kDestination) <
++              menu_destinations_.size()) {
++        model_.Move({menu_folder_}, menu_destinations_[command - kDestination]);
++      }
++  }
++}
+--- /dev/null
++++ b/chrome/browser/ui/views/tabs/common/tab_folder_controller.h
+@@ -0,0 +1,104 @@
++// Copyright 2026 The Helium Authors
++// Use, redistribution, and modification are permitted under the GPL-3.0
++// license.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_TABS_COMMON_TAB_FOLDER_CONTROLLER_H_
++#define CHROME_BROWSER_UI_VIEWS_TABS_COMMON_TAB_FOLDER_CONTROLLER_H_
++
++#include <map>
++#include <memory>
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/callback_list.h"
++#include "base/memory/raw_ptr.h"
++#include "base/memory/raw_ref.h"
++#include "chrome/browser/ui/tabs/tab_folder_model.h"
++#include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
++#include "chrome/browser/ui/views/tabs/dragging/tab_drag_target.h"
++#include "components/prefs/pref_change_registrar.h"
++#include "ui/base/mojom/menu_source_type.mojom-forward.h"
++#include "ui/menus/simple_menu_model.h"
++
++class BrowserWindowInterface;
++class PinnedTabContainerView;
++class TabCollectionNode;
++class TabFolderButton;
++namespace views {
++class MenuRunner;
++class View;
++}  // namespace views
++
++// Folder headers are siblings of real TabViews inside the existing pinned
++// scroll view. Changing the tree never reparents or recreates a tab.
++class TabFolderController : public TabDragTarget,
++                            public ui::SimpleMenuModel::Delegate,
++                            private TabStripModelObserver {
++ public:
++  TabFolderController(PinnedTabContainerView& host, TabCollectionNode& node);
++  ~TabFolderController() override;
++
++  struct Row {
++    raw_ptr<views::View> view;
++    int depth;
++    bool visible;
++  };
++  std::vector<Row> Rows() const;
++  bool HasFolders() const { return !buttons_.empty(); }
++  bool IsFiled(const views::View& child) const;
++  void NewFolder(const std::string& parent = {});
++  TabDragTarget* TargetAt(const gfx::Point& screen, bool over_open_tabs);
++
++ private:
++  friend class TabFolderButton;
++  struct Destination {
++    std::string folder;
++    std::string before;
++    bool unpin = false;
++  };
++  enum class DropPosition { kInside, kBefore, kAfter };
++  void OnTabStripModelChanged(TabStripModel*,
++                              const TabStripModelChange&,
++                              const TabStripSelectionChange&) override;
++  std::string NextSibling(const std::string& id) const;
++  void Reload();
++  std::string FiledId(const views::View& view) const;
++  std::optional<Destination> FindDestination(const gfx::Point& screen,
++                                             bool over_open_tabs) const;
++  void ShowMenu(const std::string& id,
++                const gfx::Point& screen,
++                ui::mojom::MenuSourceType source);
++  void ExecuteCommand(int command, int flags) override;
++  void Highlight(const std::string& id,
++                 DropPosition position = DropPosition::kInside);
++  void DragFolder(const std::string& id, const gfx::Point& screen, bool drop);
++  void OnTabDragEntered() override {}
++  TabDragContext* OnTabDragUpdated(DragController& controller,
++                                   const gfx::Point& screen) override;
++  void OnTabDragExited(const gfx::Point&) override;
++  void OnTabDragEnded() override;
++  bool CanDropTab() override;
++  void HandleTabDrop(DragController& controller) override;
++  base::CallbackListSubscription RegisterWillDestroyCallback(
++      base::OnceClosure callback) override;
++
++  const raw_ref<PinnedTabContainerView> host_;
++  const raw_ref<TabCollectionNode> node_;
++  const raw_ref<BrowserWindowInterface> browser_;
++  helium_pins::TabFolderModel model_;
++  std::map<std::string, raw_ptr<TabFolderButton>> buttons_;
++  std::string highlight_;
++  DropPosition highlight_position_ = DropPosition::kInside;
++  std::string menu_folder_;
++  std::vector<std::string> menu_destinations_;
++  std::unique_ptr<ui::SimpleMenuModel> destinations_menu_;
++  std::unique_ptr<ui::SimpleMenuModel> menu_;
++  std::unique_ptr<views::MenuRunner> menu_runner_;
++  std::optional<Destination> destination_;
++  bool drag_group_ = false;
++  PrefChangeRegistrar registrar_;
++  base::OnceClosureList destroying_;
++};
++
++#endif  // CHROME_BROWSER_UI_VIEWS_TABS_COMMON_TAB_FOLDER_CONTROLLER_H_
+--- a/chrome/browser/ui/views/tabs/common/tab_view_browsertest.cc
++++ b/chrome/browser/ui/views/tabs/common/tab_view_browsertest.cc
+@@ -13,6 +13,7 @@
+ #include "build/build_config.h"
+ #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
+ #include "chrome/browser/performance_manager/public/user_tuning/user_performance_tuning_manager.h"
++#include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/tab_group_sync/tab_group_sync_service_factory.h"
+ #include "chrome/browser/ui/animation/browser_animation_controller.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
+@@ -20,9 +21,12 @@
+ #include "chrome/browser/ui/layout_constants.h"
+ #include "chrome/browser/ui/recently_audible_helper.h"
+ #include "chrome/browser/ui/tabs/alert/tab_alert_controller.h"
++#include "chrome/browser/ui/tabs/helium_pins_service.h"
++#include "chrome/browser/ui/tabs/pinned_tab_service_factory.h"
+ #include "chrome/browser/ui/tabs/split_tab_metrics.h"
+ #include "chrome/browser/ui/tabs/tab_change_type.h"
+ #include "chrome/browser/ui/tabs/tab_enums.h"
++#include "chrome/browser/ui/tabs/tab_folder_model.h"
+ #include "chrome/browser/ui/tabs/tab_group_model.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/tabs/tab_style.h"
+@@ -32,6 +36,7 @@
+ #include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
+ #include "chrome/browser/ui/views/frame/vertical_tab_strip_region_view.h"
+ #include "chrome/browser/ui/views/interaction/browser_elements_views.h"
++#include "chrome/browser/ui/views/tabs/common/pinned_tab_container_view.h"
+ #include "chrome/browser/ui/views/tabs/common/root_tab_collection_node.h"
+ #include "chrome/browser/ui/views/tabs/common/split_tab_view.h"
+ #include "chrome/browser/ui/views/tabs/common/tab_collection_animating_layout_manager.h"
+@@ -645,6 +650,45 @@
+       tab->GetViewByElementId(kTabAlertIndicatorButtonElementId)->GetVisible());
+ }
+ 
++IN_PROC_BROWSER_TEST_F(TabViewTest,
++                       FolderRetainsNativeTabAcrossCollapseAndUnpack) {
++  auto* tab = tab_strip_model()->GetActiveTab();
++  const auto handle = tab->GetHandle();
++  AppendTab();
++  auto* other = tab_strip_model()->GetActiveTab();
++  ASSERT_NE(other, tab);
++
++  auto* profile = browser()->GetProfile();
++  helium_pins::TabFolderModel folders(*profile->GetPrefs());
++  const auto folder = folders.Create({}, u"Research");
++  auto* pins = PinnedTabServiceFactory::GetForProfile(profile);
++  ASSERT_TRUE(pins);
++  pins->MoveTabsToFolder(browser(), {handle}, folder, {}, false);
++  ASSERT_TRUE(tab->IsPinned());
++  auto* row = GetTabView(tab_strip_model()->GetIndexOfTab(tab));
++  ASSERT_TRUE(row);
++  auto* container = views::AsViewClass<PinnedTabContainerView>(row->parent());
++  ASSERT_TRUE(container);
++  EXPECT_TRUE(container->IsFolderRow(*row));
++  // The service wrote the pin's membership through the same profile pref.
++  helium_pins::TabFolderModel filed(*profile->GetPrefs());
++  filed.Toggle(folder);
++  ASSERT_TRUE(base::test::RunUntil([&] { return !row->GetVisible(); }));
++  EXPECT_EQ(other, tab_strip_model()->GetActiveTab());
++
++  tab_strip_model()->ActivateTab(tab);
++  ASSERT_TRUE(base::test::RunUntil([&] { return row->GetVisible(); }));
++  EXPECT_EQ(tab, row->GetTabInterface());
++  tab_strip_model()->ActivateTab(other);
++  ASSERT_TRUE(base::test::RunUntil([&] { return !row->GetVisible(); }));
++
++  filed.Unpack(folder);
++  ASSERT_TRUE(base::test::RunUntil([&] { return row->GetVisible(); }));
++  EXPECT_FALSE(container->IsFolderRow(*row));
++  EXPECT_EQ(tab, row->GetTabInterface());
++  EXPECT_TRUE(tab->IsPinned());
++}
++
+ IN_PROC_BROWSER_TEST_F(TabViewTest, PinnedTabsRenderBorder) {
+   AppendPinnedTab();
+ 
+--- a/chrome/browser/ui/views/tabs/common/tab_view_vertical_layout.cc
++++ b/chrome/browser/ui/views/tabs/common/tab_view_vertical_layout.cc
+@@ -8,6 +8,8 @@
+ #include "chrome/browser/glic/browser_ui/tab_underline_view.h"
+ #include "chrome/browser/ui/layout_constants.h"
+ #include "chrome/browser/ui/tabs/vertical_tab_strip_state.h"
++#include "chrome/browser/ui/views/tabs/common/pinned_tab_container_view.h"
++#include "chrome/browser/ui/views/tabs/common/split_tab_view.h"
+ #include "chrome/browser/ui/views/tabs/common/tab_view.h"
+ #include "chrome/browser/ui/views/tabs/shared/tab_strip_types.h"
+ #include "chrome/browser/ui/views/tabs/tab/alert_indicator_button.h"
+@@ -18,6 +20,16 @@
+ #include "ui/views/view_utils.h"
+ 
+ namespace {
++bool IsTile(const class TabView& tab) {
++  if (!tab.pinned())
++    return false;
++  const views::View* item = &tab;
++  if (views::IsViewClass<SplitTabView>(tab.parent()))
++    item = tab.parent();
++  const auto* pins = views::AsViewClass<PinnedTabContainerView>(item->parent());
++  return !pins || !pins->IsFolderRow(*item);
++}
++
+ constexpr int kIconDesignWidth = 16;
+ constexpr int kTitleMinWidth = 10;
+ constexpr int kHorizontalInset = 7;
+@@ -51,7 +63,7 @@
+   const int width =
+       size_bounds.width().value_or(tabs::kVerticalTabStripUncollapsedMaxWidth);
+   const int height = GetLayoutConstant(
+-      TabView().pinned_ ? LayoutConstant::kVerticalTabPinnedHeight
++      IsTile(TabView()) ? LayoutConstant::kVerticalTabPinnedHeight
+                         : LayoutConstant::kVerticalTabHeight);
+   views::ProposedLayout layouts;
+   layouts.host_size = gfx::Size(width, height);
+@@ -61,7 +73,7 @@
+ 
+   // If the tab is collapsed but animating with a wider width then we shouldn't
+   // center the contents.
+-  const bool is_centered = (TabView().pinned_ || TabView().collapsed_) &&
++  const bool is_centered = (IsTile(TabView()) || TabView().collapsed_) &&
+                            !TabView().IsInExpandOnHover(width);
+ 
+   int placed_children = 0;
+@@ -148,7 +160,7 @@
+   if (child_view == TabView().title_) {
+     // Pinned titles should be visible in the expand on hover state when the
+     // width is sufficient to show the title.
+-    return !TabView().pinned_ || TabView().IsInExpandOnHover(width);
++    return !IsTile(TabView()) || TabView().IsInExpandOnHover(width);
+   }
+ 
+   if (child_view == TabView().alert_indicator_) {
+@@ -165,13 +177,13 @@
+ 
+   if (child_view == TabView().icon_) {
+     const bool should_hide_icon_for_alert =
+-        TabView().pinned_ || TabView().collapsed_;
++        IsTile(TabView()) || TabView().collapsed_;
+     return !should_hide_icon_for_alert ||
+            !IsChildVisible(TabView().alert_indicator_, width);
+   }
+ 
+   if (child_view == TabView().close_button_) {
+-    if (TabView().pinned_) {
++    if (IsTile(TabView())) {
+       return false;
+     }
+ 

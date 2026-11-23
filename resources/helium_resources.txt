@@ -68,10 +68,3 @@ generated/product_icon/256x256.png chrome/app/theme/chromium/linux/product_logo_
 
 generated/product_icon/16x16.png chrome/app/theme/default_100_percent/chromium/linux/product_logo_16.png
 generated/product_icon/32x32.png chrome/app/theme/default_100_percent/chromium/linux/product_logo_32.png
-
-# Tab folders component extension
-tab_folders/manifest.json chrome/browser/resources/tab_folders/manifest.json
-tab_folders/worker.js chrome/browser/resources/tab_folders/worker.js
-tab_folders/panel.html chrome/browser/resources/tab_folders/panel.html
-tab_folders/panel.js chrome/browser/resources/tab_folders/panel.js
-tab_folders/panel.css chrome/browser/resources/tab_folders/panel.css
