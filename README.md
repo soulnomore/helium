@@ -15,7 +15,8 @@
 In a build of this branch, choose **Browser layout → Vertical** and expand the
 sidebar. Click the folder button beside **New Tab**, type a name, and press
 **Enter**. Drag an open tab onto the folder to pin it there. You can also
-right-click the folder and choose **Move current tab here**.
+right-click the folder and choose **Move current tab here**. Drag a filed tab
+between two entries to reorder it, or back into the open-tab area to unpin it.
 
 Click a folder to collapse or expand it. Its active tab stays visible.
 In the narrow sidebar, click the folder icon to do the same.

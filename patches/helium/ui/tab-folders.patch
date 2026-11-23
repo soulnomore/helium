@@ -492,18 +492,12 @@
      "//ui/display",
 --- a/chrome/browser/ui/views/frame/base_tab_strip_region_view.cc
 +++ b/chrome/browser/ui/views/frame/base_tab_strip_region_view.cc
-@@ -416,6 +416,16 @@
+@@ -416,6 +416,10 @@
    // Note: if the drag has not attached to this tab strip yet, it doesn't matter
    // which container is used because the first drag loop iteration just attaches
    // it.
 +  if (auto* pins = GetPinnedTabsContainer()) {
-+    auto* open = GetUnpinnedTabsContainer();
-+    const bool over_open_tabs =
-+        open && open->IsDrawn() &&
-+        open->GetVisibleBounds().Contains(
-+            views::View::ConvertPointFromScreen(open, point_in_screen));
-+    if (auto* target =
-+            pins->GetFolderDragTarget(point_in_screen, over_open_tabs))
++    if (auto* target = pins->GetFolderDragTarget(point_in_screen))
 +      return target;
 +  }
    if (drag_handler_->IsDraggingPinnedTabs()) {
@@ -749,7 +743,7 @@
      auto* state_controller =
          collection_node_->GetController()->GetStateController();
      CHECK(state_controller);
-@@ -287,7 +295,28 @@
+@@ -287,7 +295,27 @@
    return GetLinkDropIndexForHorizontal(loc_in_container);
  }
  
@@ -766,11 +760,10 @@
 +}
 +
 +TabDragTarget* PinnedTabContainerView::GetFolderDragTarget(
-+    const gfx::Point& screen,
-+    bool over_open_tabs) {
++    const gfx::Point& screen) {
 +  if (!folders_)
 +    return nullptr;
-+  return folders_->TargetAt(screen, over_open_tabs);
++  return folders_->TargetAt(screen);
 +}
 +
  void PinnedTabContainerView::ResetCollectionNode() {
@@ -778,7 +771,7 @@
    collapsed_state_changed_subscription_ = {};
    collection_node_ = nullptr;
  }
-@@ -296,6 +325,9 @@
+@@ -296,6 +324,9 @@
      tabs::VerticalTabStripCollapseState state) {
    // Collapsed state only exists for the vertical orientation.
    CHECK_EQ(orientation_, TabStripOrientation::kVertical);
@@ -798,19 +791,18 @@
  
  // The view class that represents the pinned tab region for the
  // tab strip. It manages the layout of all the pinned tabs and serves
-@@ -31,6 +32,11 @@
+@@ -31,6 +32,10 @@
    PinnedTabContainerView(const PinnedTabContainerView&) = delete;
    PinnedTabContainerView& operator=(const PinnedTabContainerView&) = delete;
    ~PinnedTabContainerView() override;
 +
 +  void NewTabFolder();
 +  bool IsFolderRow(const views::View& child) const;
-+  TabDragTarget* GetFolderDragTarget(const gfx::Point& screen,
-+                                     bool over_open_tabs);
++  TabDragTarget* GetFolderDragTarget(const gfx::Point& screen);
  
    class LayoutManager : public views::LayoutManagerBase {
     protected:
-@@ -92,6 +98,7 @@
+@@ -92,6 +97,7 @@
    const TabStripOrientation orientation_;
    raw_ptr<TabCollectionNode> collection_node_ = nullptr;
    const raw_ref<TabCollectionAnimatingLayoutManager> layout_manager_;
@@ -820,7 +812,7 @@
    base::CallbackListSubscription collapsed_state_changed_subscription_;
 --- /dev/null
 +++ b/chrome/browser/ui/views/tabs/common/tab_folder_controller.cc
-@@ -0,0 +1,595 @@
+@@ -0,0 +1,621 @@
 +// Copyright 2026 The Helium Authors
 +// Use, redistribution, and modification are permitted under the GPL-3.0
 +// license.
@@ -1112,6 +1104,8 @@
 +  registrar_.RemoveAll();
 +  destroying_.Notify();
 +  menu_runner_.reset();
++  if (insertion_line_)
++    host_->RemoveChildViewT(insertion_line_.ExtractAsDangling());
 +  for (auto& [id, button] : buttons_) {
 +    host_->RemoveChildViewT(button.ExtractAsDangling());
 +  }
@@ -1244,6 +1238,23 @@
 +    it->second->Mark(position);
 +}
 +
++void TabFolderController::ShowInsertionLine(const gfx::Rect& bounds) {
++  if (!bounds.IsEmpty()) {
++    if (!insertion_line_) {
++      auto line = std::make_unique<views::View>();
++      line->SetProperty(views::kViewIgnoredByLayoutKey, true);
++      line->SetCanProcessEventsWithinSubtree(false);
++      line->GetViewAccessibility().SetIsIgnored(true);
++      line->SetBackground(
++          views::CreateRoundedRectBackground(ui::kColorSysPrimary, 1));
++      insertion_line_ = host_->AddChildView(std::move(line));
++    }
++    insertion_line_->SetBoundsRect(bounds);
++  }
++  if (insertion_line_)
++    insertion_line_->SetVisible(!bounds.IsEmpty());
++}
++
 +void TabFolderController::DragFolder(const std::string& id,
 +                                     const gfx::Point& point,
 +                                     bool drop) {
@@ -1273,8 +1284,7 @@
 +}
 +
 +std::optional<TabFolderController::Destination>
-+TabFolderController::FindDestination(const gfx::Point& point,
-+                                     bool over_open_tabs) const {
++TabFolderController::FindDestination(const gfx::Point& point) const {
 +  if (!HasFolders())
 +    return std::nullopt;
 +  if (Hit(*host_, point)) {
@@ -1288,14 +1298,19 @@
 +      const auto id = FiledId(*child);
 +      if (const auto* entry = model_.Find(id)) {
 +        const auto local = views::View::ConvertPointFromScreen(child, point);
-+        return Destination{entry->parent, local.y() < child->height() / 2
-+                                              ? id
-+                                              : NextSibling(id)};
++        const bool after = local.y() >= child->height() / 2;
++        const int y = after ? child->bounds().bottom() : child->y() - 2;
++        return Destination{entry->parent, after ? NextSibling(id) : id, false,
++                           gfx::Rect(child->x(), y, child->width(), 2)};
 +      }
 +    }
 +  }
 +  // A drag from a folder to loose tabs unpins it. A drag to the ordinary pin
 +  // grid keeps it pinned. Other tab drags stay with Chromium's drag target.
++  // The tab strip already hit-tested its entire draggable area, including
++  // the empty space below the final open tab (or below the last folder).
++  const auto local = views::View::ConvertPointFromScreen(&host_.get(), point);
++  const bool over_open_tabs = local.y() >= host_->GetVisibleBounds().bottom();
 +  if ((over_open_tabs || Hit(*host_, point)) &&
 +      std::ranges::any_of(node_->GetDirectChildren(), [&](auto* child) {
 +        return IsFiled(*child) &&
@@ -1306,9 +1321,8 @@
 +  return std::nullopt;
 +}
 +
-+TabDragTarget* TabFolderController::TargetAt(const gfx::Point& point,
-+                                             bool over_open_tabs) {
-+  auto target = FindDestination(point, over_open_tabs);
++TabDragTarget* TabFolderController::TargetAt(const gfx::Point& point) {
++  auto target = FindDestination(point);
 +  if (!target)
 +    return nullptr;
 +  destination_ = std::move(target);
@@ -1319,8 +1333,11 @@
 +    DragController& controller,
 +    const gfx::Point&) {
 +  drag_group_ = controller.GetSessionData().group_header_drag_data_.has_value();
-+  Highlight(destination_ && !drag_group_ ? destination_->folder
-+                                         : std::string());
++  const bool valid = destination_ && !drag_group_;
++  ShowInsertionLine(valid ? destination_->insertion_line : gfx::Rect());
++  Highlight(valid && destination_->insertion_line.IsEmpty()
++                ? destination_->folder
++                : std::string());
 +  return node_->GetController()->GetDragHandler().GetDragContext();
 +}
 +bool TabFolderController::CanDropTab() {
@@ -1330,6 +1347,7 @@
 +  OnTabDragEnded();
 +}
 +void TabFolderController::OnTabDragEnded() {
++  ShowInsertionLine({});
 +  Highlight({});
 +  destination_.reset();
 +}
@@ -1418,7 +1436,7 @@
 +}
 --- /dev/null
 +++ b/chrome/browser/ui/views/tabs/common/tab_folder_controller.h
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,109 @@
 +// Copyright 2026 The Helium Authors
 +// Use, redistribution, and modification are permitted under the GPL-3.0
 +// license.
@@ -1440,6 +1458,7 @@
 +#include "chrome/browser/ui/views/tabs/dragging/tab_drag_target.h"
 +#include "components/prefs/pref_change_registrar.h"
 +#include "ui/base/mojom/menu_source_type.mojom-forward.h"
++#include "ui/gfx/geometry/rect.h"
 +#include "ui/menus/simple_menu_model.h"
 +
 +class BrowserWindowInterface;
@@ -1470,7 +1489,7 @@
 +  bool IsFiled(const views::View& child) const;
 +  void SetCompact(bool compact);
 +  void NewFolder(const std::string& parent = {});
-+  TabDragTarget* TargetAt(const gfx::Point& screen, bool over_open_tabs);
++  TabDragTarget* TargetAt(const gfx::Point& screen);
 +
 + private:
 +  friend class TabFolderButton;
@@ -1478,6 +1497,7 @@
 +    std::string folder;
 +    std::string before;
 +    bool unpin = false;
++    gfx::Rect insertion_line = {};
 +  };
 +  enum class DropPosition { kInside, kBefore, kAfter };
 +  void OnTabStripModelChanged(TabStripModel*,
@@ -1486,14 +1506,14 @@
 +  std::string NextSibling(const std::string& id) const;
 +  void Reload();
 +  std::string FiledId(const views::View& view) const;
-+  std::optional<Destination> FindDestination(const gfx::Point& screen,
-+                                             bool over_open_tabs) const;
++  std::optional<Destination> FindDestination(const gfx::Point& screen) const;
 +  void ShowMenu(const std::string& id,
 +                const gfx::Point& screen,
 +                ui::mojom::MenuSourceType source);
 +  void ExecuteCommand(int command, int flags) override;
 +  void Highlight(const std::string& id,
 +                 DropPosition position = DropPosition::kInside);
++  void ShowInsertionLine(const gfx::Rect& line);
 +  void DragFolder(const std::string& id, const gfx::Point& screen, bool drop);
 +  void OnTabDragEntered() override {}
 +  TabDragContext* OnTabDragUpdated(DragController& controller,
@@ -1510,6 +1530,7 @@
 +  const raw_ref<BrowserWindowInterface> browser_;
 +  helium_pins::TabFolderModel model_;
 +  std::map<std::string, raw_ptr<TabFolderButton>> buttons_;
++  raw_ptr<views::View> insertion_line_ = nullptr;
 +  std::string highlight_;
 +  DropPosition highlight_position_ = DropPosition::kInside;
 +  std::string menu_folder_;
