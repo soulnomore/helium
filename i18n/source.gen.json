@@ -1447,6 +1447,54 @@
     "message": "Show loading progress in the address bar"
   },
   {
+    "name": "IDS_HELIUM_FOLDER_NEW",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Tooltip and initial name for a new folder in the vertical tab strip.",
+    "message": "New folder"
+  },
+  {
+    "name": "IDS_HELIUM_FOLDER_NAME",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Accessible name of the text field used to rename a tab folder.",
+    "message": "Folder name"
+  },
+  {
+    "name": "IDS_HELIUM_FOLDER_SUBFOLDER",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Menu item that creates a folder inside the current tab folder.",
+    "message": "New subfolder"
+  },
+  {
+    "name": "IDS_HELIUM_FOLDER_RENAME",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Menu item that edits the name of a tab folder.",
+    "message": "Rename folder"
+  },
+  {
+    "name": "IDS_HELIUM_FOLDER_FILE_ACTIVE",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Menu item that pins the currently active tab in this folder.",
+    "message": "Move current tab here"
+  },
+  {
+    "name": "IDS_HELIUM_FOLDER_UNPACK",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Menu item that removes this folder and moves its contents up one level.",
+    "message": "Unpack folder"
+  },
+  {
+    "name": "IDS_HELIUM_FOLDER_TOP_LEVEL",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Destination for moving a tab folder out of all parent folders.",
+    "message": "Top level"
+  },
+  {
+    "name": "IDS_HELIUM_FOLDER_MOVE",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Submenu for choosing a new parent for the current tab folder.",
+    "message": "Move folder to"
+  },
+  {
     "name": "IDS_CONTENT_CONTEXT_SYSTEM_TRANSLATE",
     "source": "chrome/app/generated_resources.grd",
     "context": "The name of the macOS system Translate command in the content area context menu",

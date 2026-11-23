@@ -1,17 +1,33 @@
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
-@@ -21120,6 +21120,14 @@
+@@ -21120,6 +21120,30 @@
      <message name="IDS_OSCRYPTASYNC_AVAILABILITY_INFOBAR_BUTTON" desc="The text of the button to proceed with relaunching the entire browser to resolve keychain permission issues.">
        Relaunch
      </message>
-+    <message name="IDS_HELIUM_FOLDER_NEW" desc="Native vertical tab folder control: New folder">New folder</message>
-+    <message name="IDS_HELIUM_FOLDER_NAME" desc="Native vertical tab folder control: Folder name">Folder name</message>
-+    <message name="IDS_HELIUM_FOLDER_SUBFOLDER" desc="Native vertical tab folder control: New subfolder">New subfolder</message>
-+    <message name="IDS_HELIUM_FOLDER_RENAME" desc="Native vertical tab folder control: Rename folder">Rename folder</message>
-+    <message name="IDS_HELIUM_FOLDER_FILE_ACTIVE" desc="Native vertical tab folder control: Move current tab here">Move current tab here</message>
-+    <message name="IDS_HELIUM_FOLDER_UNPACK" desc="Native vertical tab folder control: Unpack folder">Unpack folder</message>
-+    <message name="IDS_HELIUM_FOLDER_TOP_LEVEL" desc="Native vertical tab folder control: Top level">Top level</message>
-+    <message name="IDS_HELIUM_FOLDER_MOVE" desc="Native vertical tab folder control: Move folder to">Move folder to</message>
++    <message name="IDS_HELIUM_FOLDER_NEW" desc="Tooltip and initial name for a new folder in the vertical tab strip.">
++      New folder
++    </message>
++    <message name="IDS_HELIUM_FOLDER_NAME" desc="Accessible name of the text field used to rename a tab folder.">
++      Folder name
++    </message>
++    <message name="IDS_HELIUM_FOLDER_SUBFOLDER" desc="Menu item that creates a folder inside the current tab folder.">
++      New subfolder
++    </message>
++    <message name="IDS_HELIUM_FOLDER_RENAME" desc="Menu item that edits the name of a tab folder.">
++      Rename folder
++    </message>
++    <message name="IDS_HELIUM_FOLDER_FILE_ACTIVE" desc="Menu item that pins the currently active tab in this folder.">
++      Move current tab here
++    </message>
++    <message name="IDS_HELIUM_FOLDER_UNPACK" desc="Menu item that removes this folder and moves its contents up one level.">
++      Unpack folder
++    </message>
++    <message name="IDS_HELIUM_FOLDER_TOP_LEVEL" desc="Destination for moving a tab folder out of all parent folders.">
++      Top level
++    </message>
++    <message name="IDS_HELIUM_FOLDER_MOVE" desc="Submenu for choosing a new parent for the current tab folder.">
++      Move folder to
++    </message>
    </messages>
  </release>
  </grit>
@@ -68,7 +84,7 @@
    pins_ = PinList();
    SavePins();
  
-@@ -226,6 +229,59 @@
+@@ -226,6 +229,63 @@
    TabStripModelObserver::StopObservingAll(this);
    history_tasks_.TryCancelAll();
    weak_factory_.InvalidateWeakPtrs();
@@ -93,42 +109,46 @@
 +  // the newly filed tabs at their destination.
 +  const bool reveal =
 +      !active_pin || !folders.Contains(folder, active_pin->pin_id());
-+  std::vector<tabs::TabHandle> members;
++  std::set<int> indices;
 +  for (auto handle : handles) {
 +    auto* tab = handle.Get();
 +    if (!tab || tab->GetBrowserWindowInterface() != browser)
 +      continue;
 +    if (auto split = tab->GetSplit()) {
-+      for (auto* part : model->GetSplitData(*split)->ListTabs()) {
-+        members.push_back(part->GetHandle());
-+      }
++      for (auto* part : model->GetSplitData(*split)->ListTabs())
++        indices.insert(model->GetIndexOfTab(part));
 +    } else {
-+      members.push_back(handle);
++      indices.insert(model->GetIndexOfTab(tab));
 +    }
 +  }
++  if (indices.empty())
++    return;
++
++  // The batch pin API preserves a split when all its indices are present.
++  // Save handles first because pinning changes the indices.
++  std::vector<tabs::TabHandle> members;
++  for (int index : indices)
++    members.push_back(model->GetTabAtIndex(index)->GetHandle());
++  model->SetTabsPinned(std::vector<int>(indices.begin(), indices.end()),
++                       !unpin);
++  if (unpin)
++    return;
 +
 +  std::vector<std::string> ids;
-+  std::set<tabs::TabHandle> visited;
 +  for (auto handle : members) {
 +    auto* tab = handle.Get();
-+    if (!tab || !visited.insert(handle).second)
-+      continue;
-+    if (tab->IsPinned() == unpin) {
-+      model->SetTabPinned(model->GetIndexOfTab(tab), !unpin);
-+    }
-+    if (unpin)
++    if (!tab || tab->GetBrowserWindowInterface() != browser)
 +      continue;
 +    // A tab can have arrived pinned during the drag before the pin service
 +    // finished reconciling. AddPin reuses any existing pin identity.
 +    AddPin(browser, tab);
 +    ids.push_back(HeliumPinsTabController::From(tab)->pin_id());
 +  }
-+  if (!unpin)
-+    TabFolderModel(*prefs_).Move(ids, folder, before, reveal);
++  TabFolderModel(*prefs_).Move(ids, folder, before, reveal);
  }
  
  void HeliumPinsService::SetPinnedUrl(const std::string& id, const GURL& url) {
-@@ -538,6 +594,8 @@
+@@ -538,6 +598,8 @@
    }
  
    pins_.erase(it);
@@ -156,10 +176,10 @@
  
 --- /dev/null
 +++ b/chrome/browser/ui/tabs/tab_folder_model.cc
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,187 @@
 +// Copyright 2026 The Helium Authors
-+// Use, redistribution, and modification are permitted under the GPL-3.0
-+// license.
++// You can use, redistribute, and/or modify this source code under the
++// terms of the GPL-3.0 license that can be found in the LICENSE file.
 +
 +#include "chrome/browser/ui/tabs/tab_folder_model.h"
 +
@@ -260,13 +280,23 @@
 +                          bool reveal) {
 +  if (!parent.empty() && !IsFolder(parent))
 +    return;
-+  const auto* next = Find(before);
-+  if (!before.empty() && (!next || next->parent != parent))
-+    return;
++  // A second window can move the intended neighbor before a deferred drop
++  // runs. Keep the destination folder and append if its anchor is gone.
++  auto next = std::ranges::find(entries_, before, &Entry::id);
++  if (next == entries_.end() || next->parent != parent) {
++    before.clear();
++  } else if (std::ranges::contains(ids, before)) {
++    // A selection can overlap its insertion point. Anchor it to the next
++    // sibling that stays put.
++    next = std::find_if(std::next(next), entries_.end(), [&](const Entry& e) {
++      return e.parent == parent && !std::ranges::contains(ids, e.id);
++    });
++    before = next == entries_.end() ? std::string() : next->id;
++  }
 +  std::vector<Entry> moved;
 +  std::set<std::string> seen;
 +  for (const auto& id : ids) {
-+    if (id.empty() || id == before || Contains(id, parent))
++    if (id.empty() || Contains(id, parent))
 +      return;
 +    if (!seen.insert(id).second)
 +      continue;
@@ -338,8 +368,8 @@
 +++ b/chrome/browser/ui/tabs/tab_folder_model.h
 @@ -0,0 +1,56 @@
 +// Copyright 2026 The Helium Authors
-+// Use, redistribution, and modification are permitted under the GPL-3.0
-+// license.
++// You can use, redistribute, and/or modify this source code under the
++// terms of the GPL-3.0 license that can be found in the LICENSE file.
 +
 +#ifndef CHROME_BROWSER_UI_TABS_TAB_FOLDER_MODEL_H_
 +#define CHROME_BROWSER_UI_TABS_TAB_FOLDER_MODEL_H_
@@ -395,10 +425,10 @@
 +#endif  // CHROME_BROWSER_UI_TABS_TAB_FOLDER_MODEL_H_
 --- /dev/null
 +++ b/chrome/browser/ui/tabs/tab_folder_model_unittest.cc
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,77 @@
 +// Copyright 2026 The Helium Authors
-+// Use, redistribution, and modification are permitted under the GPL-3.0
-+// license.
++// You can use, redistribute, and/or modify this source code under the
++// terms of the GPL-3.0 license that can be found in the LICENSE file.
 +
 +#include "chrome/browser/ui/tabs/tab_folder_model.h"
 +
@@ -438,6 +468,22 @@
 +  EXPECT_FALSE(restored.Find("pin-one"));
 +  restored.Unpack(parent);
 +  EXPECT_TRUE(TabFolderModel(prefs).entries().empty());
++}
++
++TEST(TabFolderModelTest, FilesTabsWithMovedOrOverlappingInsertionAnchor) {
++  TestingPrefServiceSimple prefs;
++  prefs.registry()->RegisterListPref(kTabFoldersPref);
++  TabFolderModel folders(prefs);
++  const auto target = folders.Create({}, u"Reading");
++  folders.Move({"first", "second"}, target);
++  folders.Move({"outside", "first"}, target, "first");
++  ASSERT_EQ(4u, folders.entries().size());
++  EXPECT_EQ("outside", folders.entries()[1].id);
++  EXPECT_EQ("first", folders.entries()[2].id);
++  EXPECT_EQ("second", folders.entries()[3].id);
++  folders.Move({"another"}, target, "removed-in-another-window");
++  EXPECT_EQ(target, folders.entries().back().parent);
++  EXPECT_EQ("another", folders.entries().back().id);
 +}
 +
 +TEST(TabFolderModelTest, UnpacksChildrenAtTheOriginalFolderPosition) {
@@ -743,6 +789,112 @@
      auto* state_controller =
          collection_node_->GetController()->GetStateController();
      CHECK(state_controller);
+@@ -152,6 +160,26 @@
+ std::optional<BrowserRootView::DropIndex>
+ PinnedTabContainerView::GetLinkDropIndex(const gfx::Point& loc_in_container) {
+   if (!collection_node_ || collection_node_->children().size() == 0) {
++    return std::nullopt;
++  }
++
++  if (folders_ && folders_->HasFolders()) {
++    // The folder tree can display pins in a different order from the tab model.
++    // Only an actual visible tab under the pointer may receive a URL.
++    for (const auto& node : collection_node_->children()) {
++      auto* view = node->view();
++      if (!view || !view->GetVisible())
++        continue;
++      const auto point =
++          views::View::ConvertPointToTarget(this, view, loc_in_container);
++      if (view->HitTestPoint(point)) {
++        const bool vertical =
++            GetTabStripCollapseState() !=
++                tabs::VerticalTabStripCollapseState::kExpanded ||
++            folders_->IsFiled(*view);
++        return GetLinkDropIndexForChild(*node, point, vertical);
++      }
++    }
+     return std::nullopt;
+   }
+ 
+@@ -216,28 +244,7 @@
+     gfx::Point loc_in_child =
+         views::View::ConvertPointToTarget(this, view, loc_in_container);
+ 
+-    constexpr double kDragOverMargins = 0.2;
+-    std::optional<DragPositionHint> hint;
+-
+-    const int logical_x_in_child = view->GetMirroredXInView(loc_in_child.x());
+-
+-    // Determine whether the drag is to the right, left, or over the tab/tab
+-    // split.
+-    if (logical_x_in_child < view->width() * kDragOverMargins) {
+-      hint = DragPositionHint::kBefore;
+-    } else if (logical_x_in_child > view->width() * (1 - kDragOverMargins)) {
+-      hint = DragPositionHint::kAfter;
+-    } else if (child_node->type() == TabCollectionNode::Type::SPLIT) {
+-      // If landing in the middle of the split, let the split view decide
+-      // which tab to replace.
+-      auto* split_view = views::AsViewClass<SplitTabView>(view);
+-      gfx::Point loc_in_split =
+-          views::View::ConvertPointToTarget(this, split_view, loc_in_container);
+-      return split_view->GetLinkDropIndex(loc_in_split);
+-    } else {
+-      hint = std::nullopt;
+-    }
+-    return GetDragHandler().GetLinkDropIndexForNode(*child_node, hint);
++    return GetLinkDropIndexForChild(*child_node, loc_in_child, false);
+   }
+ 
+   return std::nullopt;
+@@ -257,28 +264,29 @@
+ 
+     gfx::Point loc_in_child =
+         views::View::ConvertPointToTarget(this, view, loc_in_container);
+-    constexpr double kDragOverMargins = 0.2;
+-    std::optional<DragPositionHint> hint;
+-
+-    // Determine whether the drag is above, below, or above the tab/tab split.
+-    if (loc_in_child.y() < view->height() * kDragOverMargins) {
+-      hint = DragPositionHint::kBefore;
+-    } else if (loc_in_child.y() > view->height() * (1 - kDragOverMargins)) {
+-      hint = DragPositionHint::kAfter;
+-    } else if (child_node->type() == TabCollectionNode::Type::SPLIT) {
+-      // If landing in the middle of the split, let the split view decide
+-      // which tab to replace.
+-      auto* split_view = views::AsViewClass<SplitTabView>(view);
+-      gfx::Point loc_in_split =
+-          views::View::ConvertPointToTarget(this, split_view, loc_in_container);
+-      return split_view->GetLinkDropIndex(loc_in_split);
+-    } else {
+-      hint = std::nullopt;
+-    }
+-    return GetDragHandler().GetLinkDropIndexForNode(*child_node, hint);
++    return GetLinkDropIndexForChild(*child_node, loc_in_child, true);
+   }
+ 
+   return std::nullopt;
++}
++
++std::optional<BrowserRootView::DropIndex>
++PinnedTabContainerView::GetLinkDropIndexForChild(const TabCollectionNode& child,
++                                                 const gfx::Point& location,
++                                                 bool vertical) {
++  auto* view = child.view();
++  constexpr double kDragOverMargins = 0.2;
++  const int at =
++      vertical ? location.y() : view->GetMirroredXInView(location.x());
++  const int size = vertical ? view->height() : view->width();
++  std::optional<DragPositionHint> hint;
++  if (at < size * kDragOverMargins)
++    hint = DragPositionHint::kBefore;
++  else if (at > size * (1 - kDragOverMargins))
++    hint = DragPositionHint::kAfter;
++  else if (auto* split = views::AsViewClass<SplitTabView>(view))
++    return split->GetLinkDropIndex(location);
++  return GetDragHandler().GetLinkDropIndexForNode(child, hint);
+ }
+ 
+ std::optional<BrowserRootView::DropIndex>
 @@ -287,7 +295,27 @@
    return GetLinkDropIndexForHorizontal(loc_in_container);
  }
@@ -802,7 +954,19 @@
  
    class LayoutManager : public views::LayoutManagerBase {
     protected:
-@@ -92,6 +97,7 @@
+@@ -72,6 +77,11 @@
+       const views::View& view) const override;
+   gfx::Rect GetDraggingViewsClampingBounds() const override;
+ 
++  std::optional<BrowserRootView::DropIndex> GetLinkDropIndexForChild(
++      const TabCollectionNode& child,
++      const gfx::Point& location,
++      bool vertical);
++
+   // While in horizontal orientation, the x-coordinate of the single row is
+   // used to determine the drop index.
+   std::optional<BrowserRootView::DropIndex> GetLinkDropIndexForHorizontal(
+@@ -92,6 +102,7 @@
    const TabStripOrientation orientation_;
    raw_ptr<TabCollectionNode> collection_node_ = nullptr;
    const raw_ref<TabCollectionAnimatingLayoutManager> layout_manager_;
@@ -814,8 +978,8 @@
 +++ b/chrome/browser/ui/views/tabs/common/tab_folder_controller.cc
 @@ -0,0 +1,621 @@
 +// Copyright 2026 The Helium Authors
-+// Use, redistribution, and modification are permitted under the GPL-3.0
-+// license.
++// You can use, redistribute, and/or modify this source code under the
++// terms of the GPL-3.0 license that can be found in the LICENSE file.
 +
 +#include "chrome/browser/ui/views/tabs/common/tab_folder_controller.h"
 +
@@ -1438,8 +1602,8 @@
 +++ b/chrome/browser/ui/views/tabs/common/tab_folder_controller.h
 @@ -0,0 +1,109 @@
 +// Copyright 2026 The Helium Authors
-+// Use, redistribution, and modification are permitted under the GPL-3.0
-+// license.
++// You can use, redistribute, and/or modify this source code under the
++// terms of the GPL-3.0 license that can be found in the LICENSE file.
 +
 +#ifndef CHROME_BROWSER_UI_VIEWS_TABS_COMMON_TAB_FOLDER_CONTROLLER_H_
 +#define CHROME_BROWSER_UI_VIEWS_TABS_COMMON_TAB_FOLDER_CONTROLLER_H_
@@ -1548,7 +1712,16 @@
 +#endif  // CHROME_BROWSER_UI_VIEWS_TABS_COMMON_TAB_FOLDER_CONTROLLER_H_
 --- a/chrome/browser/ui/views/tabs/common/tab_view_browsertest.cc
 +++ b/chrome/browser/ui/views/tabs/common/tab_view_browsertest.cc
-@@ -13,6 +13,7 @@
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/tabs/common/tab_view.h"
++
++#include "components/tabs/public/split_tab_data.h"
+ 
+ #include "base/functional/callback_helpers.h"
+ #include "base/i18n/test/scoped_rtl_for_testing.h"
+@@ -13,6 +15,7 @@
  #include "build/build_config.h"
  #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
  #include "chrome/browser/performance_manager/public/user_tuning/user_performance_tuning_manager.h"
@@ -1556,7 +1729,7 @@
  #include "chrome/browser/tab_group_sync/tab_group_sync_service_factory.h"
  #include "chrome/browser/ui/animation/browser_animation_controller.h"
  #include "chrome/browser/ui/browser_element_identifiers.h"
-@@ -20,9 +21,12 @@
+@@ -20,9 +23,12 @@
  #include "chrome/browser/ui/layout_constants.h"
  #include "chrome/browser/ui/recently_audible_helper.h"
  #include "chrome/browser/ui/tabs/alert/tab_alert_controller.h"
@@ -1569,7 +1742,7 @@
  #include "chrome/browser/ui/tabs/tab_group_model.h"
  #include "chrome/browser/ui/tabs/tab_strip_model.h"
  #include "chrome/browser/ui/tabs/tab_style.h"
-@@ -32,6 +36,7 @@
+@@ -32,6 +38,7 @@
  #include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
  #include "chrome/browser/ui/views/frame/vertical_tab_strip_region_view.h"
  #include "chrome/browser/ui/views/interaction/browser_elements_views.h"
@@ -1577,7 +1750,7 @@
  #include "chrome/browser/ui/views/tabs/common/root_tab_collection_node.h"
  #include "chrome/browser/ui/views/tabs/common/split_tab_view.h"
  #include "chrome/browser/ui/views/tabs/common/tab_collection_animating_layout_manager.h"
-@@ -645,6 +650,45 @@
+@@ -645,6 +652,98 @@
        tab->GetViewByElementId(kTabAlertIndicatorButtonElementId)->GetVisible());
  }
  
@@ -1618,6 +1791,59 @@
 +  EXPECT_FALSE(container->IsFolderRow(*row));
 +  EXPECT_EQ(tab, row->GetTabInterface());
 +  EXPECT_TRUE(tab->IsPinned());
++}
++
++IN_PROC_BROWSER_TEST_F(TabViewTest, LinkDropTargetsVisiblePinAfterFiling) {
++  AppendPinnedTab();
++  auto* filed = tab_strip_model()->GetActiveTab();
++  AppendPinnedTab();
++  auto* loose = tab_strip_model()->GetActiveTab();
++  auto* profile = browser()->GetProfile();
++  const auto folder =
++      helium_pins::TabFolderModel(*profile->GetPrefs()).Create({}, u"Research");
++  auto* pins = PinnedTabServiceFactory::GetForProfile(profile);
++  ASSERT_TRUE(pins);
++  pins->MoveTabsToFolder(browser(), {filed->GetHandle()}, folder, {}, false);
++  auto* filed_view = GetTabView(tab_strip_model()->GetIndexOfTab(filed));
++  auto* loose_view = GetTabView(tab_strip_model()->GetIndexOfTab(loose));
++  ASSERT_TRUE(filed_view);
++  ASSERT_TRUE(loose_view);
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return loose_view->bounds().bottom() < filed_view->y(); }));
++  auto* container =
++      views::AsViewClass<PinnedTabContainerView>(loose_view->parent());
++  ASSERT_TRUE(container);
++  const auto target =
++      container->GetLinkDropIndex(loose_view->bounds().CenterPoint());
++  ASSERT_TRUE(target);
++  EXPECT_EQ(tab_strip_model()->GetIndexOfTab(loose), target->index);
++  EXPECT_EQ(BrowserRootView::DropIndex::RelativeToIndex::kReplaceIndex,
++            target->relative_to_index);
++}
++
++IN_PROC_BROWSER_TEST_F(TabViewTest, FilingAndUnfilingPreserveTheNativeSplit) {
++  AppendSplitTab();
++  auto* tab = tab_strip_model()->GetActiveTab();
++  const auto split = tab->GetSplit();
++  ASSERT_TRUE(split);
++  const auto members = tab_strip_model()->GetSplitData(*split)->ListTabs();
++  ASSERT_EQ(2u, members.size());
++  auto* profile = browser()->GetProfile();
++  const auto folder =
++      helium_pins::TabFolderModel(*profile->GetPrefs()).Create({}, u"Compare");
++  auto* pins = PinnedTabServiceFactory::GetForProfile(profile);
++  ASSERT_TRUE(pins);
++
++  pins->MoveTabsToFolder(browser(), {tab->GetHandle()}, folder, {}, false);
++  for (auto* member : members) {
++    ASSERT_TRUE(member->IsPinned());
++    EXPECT_EQ(split, member->GetSplit());
++  }
++  pins->MoveTabsToFolder(browser(), {tab->GetHandle()}, {}, {}, true);
++  for (auto* member : members) {
++    EXPECT_FALSE(member->IsPinned());
++    EXPECT_EQ(split, member->GetSplit());
++  }
 +}
 +
  IN_PROC_BROWSER_TEST_F(TabViewTest, PinnedTabsRenderBorder) {
