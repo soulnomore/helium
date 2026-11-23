@@ -1,0 +1,348 @@
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -21120,6 +21120,13 @@
+     <message name="IDS_OSCRYPTASYNC_AVAILABILITY_INFOBAR_BUTTON" desc="The text of the button to proceed with relaunching the entire browser to resolve keychain permission issues.">
+       Relaunch
+     </message>
++
++    <message name="IDS_HELIUM_TAB_FOLDERS" desc="Button to display folders in the vertical tab strip">
++      Folders
++    </message>
++    <message name="IDS_HELIUM_TAB_FOLDERS_BACK" desc="Button to return from folders to the standard tab list">
++      Tabs
++    </message>
+   </messages>
+ </release>
+ </grit>
+--- a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
++++ b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
+@@ -54,6 +54,7 @@
+       extension_misc::kPdfExtensionId,
+       helium::kUBlockOriginComponentId,
+       helium::kExtstoreFixupsExtensionId,
++      extension_misc::kHeliumTabFoldersExtensionId,
+ #if BUILDFLAG(IS_CHROMEOS)
+       extension_misc::kAssessmentAssistantExtensionId,
+       extension_misc::kAccessibilityCommonExtensionId,
+@@ -117,6 +118,7 @@
+     case IDR_WEBSTORE_MANIFEST:
+     case IDR_UBLOCK_MANIFEST_JSON:
+     case IDR_EXTSTORE_FIXUPS_MANIFEST_JSON:
++    case IDR_HELIUM_TAB_FOLDERS_MANIFEST_JSON:
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+     // Separate ChromeOS list, as it is quite large.
+--- a/chrome/browser/extensions/component_loader.cc
++++ b/chrome/browser/extensions/component_loader.cc
+@@ -742,6 +742,8 @@
+     AddWebStoreApp();
+     AddUBlock();
+     AddExtstoreFixups();
++    Add(IDR_HELIUM_TAB_FOLDERS_MANIFEST_JSON,
++        base::FilePath(FILE_PATH_LITERAL("tab_folders")));
+ #if BUILDFLAG(IS_CHROMEOS)
+     AddChromeApp();
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+--- a/chrome/browser/resources/component_extension_resources.grd
++++ b/chrome/browser/resources/component_extension_resources.grd
+@@ -69,6 +69,11 @@
+         <include name="IDR_ARC_SUPPORT_ICON_HEADER" file="chromeos/arc_support/images/header.png" type="BINDATA" />
+         <include name="IDR_ARC_SUPPORT_UI_JS" file="chromeos/arc_support/ui.js" type="chrome_html" />
+       </if>
++      <include name="IDR_HELIUM_TAB_FOLDERS_MANIFEST_JSON" file="tab_folders/manifest.json" type="BINDATA" />
++      <include name="IDR_HELIUM_TAB_FOLDERS_PANEL_CSS" file="tab_folders/panel.css" type="BINDATA" />
++      <include name="IDR_HELIUM_TAB_FOLDERS_PANEL_HTML" file="tab_folders/panel.html" type="BINDATA" />
++      <include name="IDR_HELIUM_TAB_FOLDERS_PANEL_JS" file="tab_folders/panel.js" type="BINDATA" />
++      <include name="IDR_HELIUM_TAB_FOLDERS_WORKER_JS" file="tab_folders/worker.js" type="BINDATA" />
+     </includes>
+ 
+     <!-- Game Controls lottie json files -->
+--- a/chrome/browser/ui/tabs/tab_strip_prefs.cc
++++ b/chrome/browser/ui/tabs/tab_strip_prefs.cc
+@@ -38,6 +38,7 @@
+   registry->RegisterIntegerPref(prefs::kHeliumLayout,
+                                 std::to_underlying(HeliumLayoutType::kClassic));
+   registry->RegisterBooleanPref(prefs::kHeliumVerticalRightAligned, false);
++  registry->RegisterBooleanPref(kShowTabFolders, false);
+   registry->RegisterBooleanPref(prefs::kHeliumZenMode, false);
+   registry->RegisterBooleanPref(prefs::kHeliumZenModeSidebarPinned, false);
+   registry->RegisterBooleanPref(prefs::kHeliumZenModeTopChromePinned, false);
+--- a/chrome/browser/ui/tabs/tab_strip_prefs.h
++++ b/chrome/browser/ui/tabs/tab_strip_prefs.h
+@@ -13,6 +13,8 @@
+ class BrowserWindowInterface;
+ 
+ namespace tabs {
++
++inline constexpr char kShowTabFolders[] = "helium.show_tab_folders";
+ 
+ enum class TabSearchPosition {
+   kLeadingHorizontalTabstrip,
+--- a/chrome/browser/ui/views/frame/BUILD.gn
++++ b/chrome/browser/ui/views/frame/BUILD.gn
+@@ -532,6 +532,7 @@
+   public_deps = [
+     ":base_tab_strip_region_view",
+     "//base",
++    "//components/prefs",
+     "//chrome/browser/ui/animation",
+     "//chrome/browser/ui/omnibox",
+     "//chrome/browser/ui/tabs",
+@@ -569,6 +570,12 @@
+     "//chrome/browser/ui/views/tabs/organizer",
+     "//chrome/browser/ui/web_applications",
+     "//chrome/browser/ui:view_ids",
++    "//chrome/browser/extensions",
++    "//chrome/browser/profiles:profile",
++    "//chrome/browser/ui/views/extensions:extension_view_views",
++    "//chrome/common/extensions",
++    "//extensions/common",
++    "//extensions/browser",
+     "//ui/base/dragdrop:types",
+     "//ui/compositor",
+     "//ui/display",
+--- a/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
++++ b/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
+@@ -16,7 +16,11 @@
+ #include "base/metrics/user_metrics.h"
+ #include "base/metrics/user_metrics_action.h"
+ #include "base/numerics/safe_conversions.h"
++#include "base/one_shot_event.h"
+ #include "base/time/time.h"
++#include "chrome/browser/extensions/extension_view_host.h"
++#include "chrome/browser/extensions/extension_view_host_factory.h"
++#include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+ #include "chrome/browser/ui/animation/browser_animation_controller.h"
+ #include "chrome/browser/ui/animation/browser_animation_types.h"
+@@ -32,13 +36,15 @@
+ #include "chrome/browser/ui/tabs/organizer/organizer_panel_utils.h"
+ #include "chrome/browser/ui/tabs/tab_group_model.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/tabs/tab_strip_prefs.h"
+ #include "chrome/browser/ui/tabs/vertical_tab_strip_state.h"
+ #include "chrome/browser/ui/tabs/vertical_tab_strip_state_controller.h"
+ #include "chrome/browser/ui/ui_features.h"
++#include "chrome/browser/ui/view_ids.h"
+ #include "chrome/browser/ui/views/animations/tab_strip_animations.h"
++#include "chrome/browser/ui/views/extensions/extension_view_views.h"
+ #include "chrome/browser/ui/views/frame/base_tab_strip_region_view.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+-#include "chrome/browser/ui/view_ids.h"
+ #include "chrome/browser/ui/views/frame/custom_corners_background.h"
+ #include "chrome/browser/ui/views/frame/frame_separator.h"
+ #include "chrome/browser/ui/views/frame/safe_invoke/safe_invoke.h"
+@@ -57,9 +63,14 @@
+ #include "chrome/browser/ui/views/tabs/vertical/vertical_tab_strip_bottom_container.h"
+ #include "chrome/browser/ui/views/tabs/vertical/vertical_tab_strip_focus_swipe_controller.h"
+ #include "chrome/browser/ui/web_applications/app_browser_controller.h"
++#include "chrome/common/extensions/extension_constants.h"
+ #include "chrome/grit/generated_resources.h"
++#include "components/prefs/pref_service.h"
+ #include "components/tabs/public/tab_group.h"
+ #include "components/tabs/public/tab_interface.h"
++#include "extensions/browser/extension_registry.h"
++#include "extensions/browser/extension_system.h"
++#include "extensions/common/extension.h"
+ #include "ui/base/dragdrop/os_exchange_data.h"
+ #include "ui/base/interaction/element_tracker.h"
+ #include "ui/base/l10n/l10n_util.h"
+@@ -175,6 +186,27 @@
+       gfx::Insets::TLBR(kBottomContainerGap, region_horizontal_padding,
+                         0, region_horizontal_padding));
+ 
++  if (browser_view->GetProfile()->IsRegularProfile()) {
++    tab_folders_button_ = bottom_button_container_->AddChildView(
++        std::make_unique<views::LabelButton>(
++            base::BindRepeating(&VerticalTabStripRegionView::ToggleTabFolders,
++                                base::Unretained(this)),
++            l10n_util::GetStringUTF16(IDS_HELIUM_TAB_FOLDERS)));
++    tab_folders_button_->SetFocusBehavior(views::View::FocusBehavior::ALWAYS);
++    tab_folders_prefs_.Init(browser_view->GetProfile()->GetPrefs());
++    tab_folders_prefs_.Add(
++        tabs::kShowTabFolders,
++        base::BindRepeating(&VerticalTabStripRegionView::UpdateTabFolders,
++                            base::Unretained(this)));
++    if (auto* system =
++            extensions::ExtensionSystem::Get(browser_view->GetProfile())) {
++      system->ready().Post(
++          FROM_HERE,
++          base::BindOnce(&VerticalTabStripRegionView::UpdateTabFolders,
++                         weak_ptr_factory_.GetWeakPtr()));
++    }
++  }
++
+   gemini_button_ =
+       content_area_view_->AddChildView(std::make_unique<views::View>());
+ 
+@@ -220,6 +252,10 @@
+ }
+ 
+ VerticalTabStripRegionView::~VerticalTabStripRegionView() {
++  // The extension view holds a pointer to its host. Destroy it first.
++  if (tab_folders_) {
++    content_area_view_->RemoveChildViewT(tab_folders_.ExtractAsDangling());
++  }
+   for (const auto& lock : hover_locks_) {
+     lock->ClearRegionViewOnDestruction();
+   }
+@@ -907,7 +943,73 @@
+   omnibox_tab_helper_observation_.Reset();
+   ResetExpandOnHoverTimers();
+   is_expanded_on_hover_ = false;
++  if (tab_folders_) {
++    tab_folders_->SetVisible(false);
++  }
+   return BaseTabStripRegionView::RemoveTabStripView(view);
++}
++
++void VerticalTabStripRegionView::ToggleTabFolders() {
++  browser_view()->GetProfile()->GetPrefs()->SetBoolean(
++      tabs::kShowTabFolders, !tab_folders_ || !tab_folders_->GetVisible());
++}
++
++void VerticalTabStripRegionView::CloseTabFolders(extensions::ExtensionHost*) {
++  browser_view()->GetProfile()->GetPrefs()->SetBoolean(tabs::kShowTabFolders,
++                                                       false);
++  content_area_view_->RemoveChildViewT(tab_folders_.ExtractAsDangling());
++  tab_folders_host_.reset();
++}
++
++void VerticalTabStripRegionView::UpdateTabFolders() {
++  if (!tab_folders_button_ || !tab_strip_view()) {
++    return;
++  }
++  Profile* profile = browser_view()->GetProfile();
++  auto* registry = extensions::ExtensionRegistry::Get(profile);
++  const auto* extension =
++      registry ? registry->GetExtensionById(
++                     extension_misc::kHeliumTabFoldersExtensionId,
++                     extensions::ExtensionRegistry::ENABLED)
++               : nullptr;
++  const bool expanded = state_controller_->GetCollapseState() ==
++                        tabs::VerticalTabStripCollapseState::kExpanded;
++  tab_folders_button_->SetVisible(expanded && extension);
++  const bool show = expanded && extension &&
++                    profile->GetPrefs()->GetBoolean(tabs::kShowTabFolders);
++  if (show && !tab_folders_) {
++    tab_folders_host_ =
++        extensions::ExtensionViewHostFactory::CreateSidePanelHost(
++            *extension, extension->GetResourceURL("panel.html"),
++            browser_view()->browser(),
++            /*tab_interface=*/nullptr);
++    tab_folders_host_->SetCloseHandler(base::BindOnce(
++        &VerticalTabStripRegionView::CloseTabFolders, base::Unretained(this)));
++    // The wrapper owns visibility. An ExtensionViewViews can show itself when
++    // its first load completes while the user is collapsing the strip.
++    tab_folders_ =
++        content_area_view_->AddChildViewAt(std::make_unique<views::View>(), 0);
++    tab_folders_->SetUseDefaultFillLayout(true);
++    tab_folders_->SetProperty(
++        views::kFlexBehaviorKey,
++        views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToZero,
++                                 views::MaximumFlexSizeRule::kUnbounded));
++    tab_folders_
++        ->AddChildView(std::make_unique<ExtensionViewViews>(
++            profile, tab_folders_host_.get()))
++        ->Init();
++  }
++  if (tab_folders_) {
++    tab_folders_->SetVisible(show);
++  }
++  tab_strip_view()->SetVisible(!show);
++  tab_folders_button_->SetText(l10n_util::GetStringUTF16(
++      show ? IDS_HELIUM_TAB_FOLDERS_BACK : IDS_HELIUM_TAB_FOLDERS));
++  bottom_button_container_->SetProperty(
++      views::kFlexBehaviorKey,
++      views::FlexSpecification(views::MinimumFlexSizeRule::kPreferred,
++                               show ? views::MaximumFlexSizeRule::kPreferred
++                                    : views::MaximumFlexSizeRule::kUnbounded));
+ }
+ 
+ void VerticalTabStripRegionView::UpdateInteriorMargin() {
+@@ -943,6 +1045,7 @@
+ 
+   if (tab_strip_view()) {
+     tab_strip_view()->SetCollapsedState(collapsed);
++    UpdateTabFolders();
+   }
+ 
+   if (state == tabs::VerticalTabStripCollapseState::kExpanded ||
+--- a/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.h
++++ b/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.h
+@@ -11,6 +11,7 @@
+ #include "base/callback_list.h"
+ #include "base/containers/flat_set.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
+ #include "base/time/time.h"
+ #include "base/timer/timer.h"
+ #include "chrome/browser/ui/animation/browser_animation_types.h"
+@@ -24,6 +25,7 @@
+ #include "chrome/browser/ui/views/tabs/organizer/organizer_panel_host.h"
+ #include "chrome/browser/ui/views/tabs/shared/drop_arrow.h"
+ #include "chrome/browser/ui/views/tabs/vertical/vertical_tab_strip_expand_on_hover_lock.h"
++#include "components/prefs/pref_change_registrar.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "ui/base/interaction/element_tracker.h"
+ #include "ui/base/metadata/metadata_header_macros.h"
+@@ -40,11 +42,17 @@
+ class VerticalTabStripFocusSwipeController;
+ class ShadowFrameView;
+ 
++namespace extensions {
++class ExtensionHost;
++class ExtensionViewHost;
++}  // namespace extensions
++
+ namespace tabs {
+ class VerticalTabStripStateController;
+ }  // namespace tabs
+ 
+ namespace views {
++class LabelButton;
+ class ResizeArea;
+ class Separator;
+ class View;
+@@ -94,6 +102,9 @@
+                                  bool below_toolbar);
+ 
+   void UpdateInteriorMargin();
++  void ToggleTabFolders();
++  void UpdateTabFolders();
++  void CloseTabFolders(extensions::ExtensionHost* host);
+ 
+   // views::LayoutDelegate:
+   views::ProposedLayout CalculateProposedLayout(
+@@ -236,6 +247,11 @@
+   // Padding around the content area, set by UpdateInteriorMargin().
+   gfx::Insets interior_margin_;
+ 
++  // Created on first use. A collapsed strip continues to show native tab icons.
++  std::unique_ptr<extensions::ExtensionViewHost> tab_folders_host_;
++  raw_ptr<views::View> tab_folders_ = nullptr;
++  PrefChangeRegistrar tab_folders_prefs_;
++  raw_ptr<views::LabelButton> tab_folders_button_ = nullptr;
+   raw_ptr<VerticalTabStripBottomContainer> bottom_button_container_ = nullptr;
+   raw_ptr<views::View> gemini_button_ = nullptr;
+   raw_ptr<views::ResizeArea> resize_area_ = nullptr;
+@@ -299,6 +315,7 @@
+   base::OneShotTimer mouse_exit_timer_;
+ 
+   base::CallbackListSubscription paint_as_active_subscription_;
++  base::WeakPtrFactory<VerticalTabStripRegionView> weak_ptr_factory_{this};
+ };
+ 
+ #endif  // CHROME_BROWSER_UI_VIEWS_FRAME_VERTICAL_TAB_STRIP_REGION_VIEW_H_
+--- a/chrome/common/extensions/extension_constants.h
++++ b/chrome/common/extensions/extension_constants.h
+@@ -34,6 +34,9 @@
+ }  // namespace extension_urls
+ 
+ namespace extension_misc {
++
++inline constexpr char kHeliumTabFoldersExtensionId[] =
++    "klejbhkceljchdennldmojfpebbkadbb";
+ 
+ // The extension id of the Data Saver extension.
+ inline constexpr char kDataSaverExtensionId[] =

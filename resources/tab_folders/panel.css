@@ -1,0 +1,66 @@
+:root {
+  color-scheme: light dark;
+  --text: light-dark(#25272b, #e7e8eb);
+  --muted: light-dark(#676a72, #a6a8af);
+  --line: light-dark(#d8dade, #45474d);
+  --hover: light-dark(#0000000b, #ffffff0c);
+  --active: light-dark(#ffffffec, #ffffff18);
+  --surface: light-dark(#f0f1f3, #26272a);
+  --popup: light-dark(#fafafa, #35363a);
+  --accent: light-dark(#395c9a, #a0bff5);
+  font: 13px system-ui, sans-serif;
+  color: var(--text);
+  background: var(--surface);
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+[hidden], .symbols { display: none !important; }
+main { padding: 5px 7px 18px; }
+header, h2 { align-items: center; display: flex; height: 30px; margin: 0 4px; }
+header { justify-content: space-between; }
+h1, h2 { color: var(--muted); font-weight: 600; font-size: 11px; margin-block: 0; }
+h1 { padding-inline-start: 3px; }
+h2 { padding-inline-start: 3px; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; flex: none; }
+.icon-button {
+  border: 0; padding: 3px; width: 24px; height: 24px; display: grid;
+  place-items: center; border-radius: 5px; color: var(--muted); background: transparent;
+}
+.icon-button:hover, .icon-button:focus-visible { background: var(--hover); color: var(--text); }
+.row {
+  position: relative; display: flex; align-items: center; gap: 7px;
+  min-height: 33px; border-radius: 7px; cursor: default; user-select: none;
+  padding-inline: calc(6px + min(var(--depth, 0) * 14px, 42%)) 4px;
+}
+.row:hover, .row.menu-open { background: var(--hover); }
+.row.active { background: var(--active); box-shadow: 0 1px 3px #0002; }
+.row:focus-visible, button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.row .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.row[data-kind="folder"] .title { font-weight: 600; }
+.row .glyph, .row img { width: 16px; height: 16px; color: var(--muted); }
+.row .chevron { width: 11px; height: 13px; margin-inline-end: -3px; color: var(--muted); }
+.row[aria-expanded="true"] .chevron { transform: rotate(90deg); }
+.row[data-kind="saved"] { padding-inline-start: calc(21px + min(var(--depth, 0) * 14px, 42%)); }
+.row.has-active .glyph { color: var(--accent); }
+.row.has-active::after { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); margin-inline-end: 8px; }
+.row .icon-button { opacity: 0; flex: none; }
+.row:hover .icon-button, .row:focus-within .icon-button, .row.menu-open .icon-button { opacity: 1; }
+.row .icon-button svg { width: 14px; height: 14px; }
+.editor { width: 100%; min-width: 0; height: 25px; border: 1px solid var(--accent); border-radius: 4px; background: var(--popup); outline: 0; padding: 1px 5px; }
+#open { margin-block-start: 7px; padding-block-start: 4px; border-block-start: 1px solid var(--line); min-height: 65px; }
+#empty { color: var(--muted); font-size: 12px; margin: 3px 7px 8px; line-height: 1.5; }
+#folders { min-height: 4px; }
+.drop-inside { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 7px; }
+.drop-before::before, .drop-after::before { content: ''; position: absolute; height: 2px; background: var(--accent); inset-inline: 3px; }
+.drop-before::before { top: 0; }
+.drop-after::before { bottom: 0; }
+#menu, dialog { border: 1px solid var(--line); background: var(--popup); color: var(--text); border-radius: 8px; padding: 4px; box-shadow: 0 6px 15px #0003; }
+#menu { position: fixed; z-index: 1; min-width: 140px; max-width: 98vw; overflow-y: auto; max-height: 95vh; }
+#menu button { display: block; width: 100%; background: transparent; border: 0; text-align: start; border-radius: 4px; padding: 6px 9px; }
+#menu button:hover, #menu button:focus { background: var(--hover); outline: 0; }
+dialog { width: min(260px, 95vw); padding: 12px; }
+dialog select { width: 100%; margin-block: 8px; background: var(--popup); }
+dialog footer { display: flex; justify-content: end; gap: 6px; }
+#status { position: fixed; bottom: 6px; inset-inline: 6px; padding: 8px; border-radius: 6px; background: var(--popup); border: 1px solid var(--line); }

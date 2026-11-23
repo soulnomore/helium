@@ -10,6 +10,23 @@
     </a>
 </div>
 
+## Tab folders in this fork
+
+In a build of this fork, switch to vertical tabs, expand the sidebar, and select
+**Folders** beside **New tab**. Use **+** to name a folder, then drag an open
+tab into it. Drop on the middle of a folder to nest an item, or near the top or
+bottom edge of a row to reorder it.
+
+A saved tab keeps its original address when you close it. Click its row to
+reopen it. Folders are shared by regular windows in the same profile. Each
+window shows its own open tabs. A folder’s **⋯** menu lets you add a subfolder,
+rename it, move it, or unpack it while keeping its contents.
+
+To try the folder UI in an existing desktop Helium installation, open
+`helium://extensions`, enable **Developer mode**, choose **Load unpacked**,
+and select [resources/tab_folders](resources/tab_folders). Open **Tab folders**
+from the extensions menu to use it in Helium’s side panel.
+
 ## Downloads
 > [!NOTE]
 > Helium is in beta, so unexpected issues may occur.
